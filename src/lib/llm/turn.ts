@@ -34,6 +34,8 @@ import { rollInitiativeFor, buildInitiativeOrder, initiativeLabel, type Initiati
 import { pcPwReference } from "../rules/live";
 
 const MODEL = process.env.SOLO_MODEL || "claude-sonnet-5";
+/** Fact compression is extractive — a cheaper model does it fine. */
+const COMPRESS_MODEL = process.env.SOLO_COMPRESS_MODEL || "claude-haiku-4-5-20251001";
 const MAX_TOKENS = 8000;
 const MAX_LOOP_ITERATIONS = 12;
 /** How many recent turns of raw transcript to keep before compressing (§5.3). */
@@ -235,8 +237,42 @@ function sanitizeTranscript(messages: Anthropic.MessageParam[]): Anthropic.Messa
   return out;
 }
 
+/** Add an ephemeral cache breakpoint to a message's last content block. */
+export function markCache(m: Anthropic.MessageParam): Anthropic.MessageParam {
+  const cc = { type: "ephemeral" as const };
+  if (typeof m.content === "string") {
+    return { ...m, content: [{ type: "text", text: m.content, cache_control: cc }] };
+  }
+  if (Array.isArray(m.content) && m.content.length) {
+    const blocks = m.content.slice();
+    blocks[blocks.length - 1] = { ...(blocks[blocks.length - 1] as object), cache_control: cc } as (typeof blocks)[number];
+    return { ...m, content: blocks };
+  }
+  return m;
+}
+
+const CONTEXT_MARK = "\n\n---\n\nPlayer action: ";
+
+/**
+ * Once a turn is done, the giant state-context blob in its user message is dead
+ * weight — the next turn re-sends the current state fresh. Strip it back to the
+ * bare action line so the transcript doesn't grow O(n²). FEATURE_PLAN.md cost pass.
+ */
+export function stripStaleContext(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  return messages.map((m) => {
+    if (m.role === "user" && typeof m.content === "string") {
+      const i = m.content.indexOf(CONTEXT_MARK);
+      if (i !== -1) return { ...m, content: "Player action: " + m.content.slice(i + CONTEXT_MARK.length) };
+    }
+    return m;
+  });
+}
+
 function messagesFor(state: CampaignState, freshUser: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
   const prior = sanitizeTranscript((state.transcript ?? []) as Anthropic.MessageParam[]);
+  // Cache the (now-slim) transcript prefix — it's stable across a turn's calls
+  // and across turns until compression rewrites it.
+  if (prior.length) prior[prior.length - 1] = markCache(prior[prior.length - 1]);
   return [...prior, ...freshUser];
 }
 
@@ -413,7 +449,7 @@ async function drive(
         }
         let next = applyDelta(state, c.delta);
         persistTranscript(next, messages);
-        next = await maybeCompress(next, { anthropic, model: MODEL, windowTurns: TRANSCRIPT_WINDOW_TURNS });
+        next = await maybeCompress(next, { anthropic, model: COMPRESS_MODEL, windowTurns: TRANSCRIPT_WINDOW_TURNS });
         return { kind: "turn-complete", state: next, narration: finalNarration, delta: c.delta, rolls };
       } else {
         toolResults.push({
@@ -434,7 +470,7 @@ async function drive(
 }
 
 function persistTranscript(state: CampaignState, messages: Anthropic.MessageParam[]) {
-  state.transcript = messages as unknown[];
+  state.transcript = stripStaleContext(messages) as unknown[];
   state.pendingPlayerRoll = null;
   state.pendingInitiative = null;
   state.pendingTurnMessages = null;

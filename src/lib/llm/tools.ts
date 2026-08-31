@@ -117,5 +117,8 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     description:
       "Begin structured combat when a fight breaks out. The backend rolls initiative for the NPCs (real dice) and pauses for the PC to roll theirs, then builds the turn order. Call generate_npc for every combatant FIRST. After this, the Campaign State carries combat.active / round / turn order — resolve turns in that order, pause on the PC's turn, and keep combat.turnIndex / combat.round updated in commit_turn's delta.",
     input_schema: toInputSchema(StartCombatInput),
+    // Cache breakpoint: system + all tool schemas are re-sent every model call
+    // (several per turn in combat) and never change — cache the whole prefix.
+    cache_control: { type: "ephemeral" },
   },
 ];

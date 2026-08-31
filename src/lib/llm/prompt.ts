@@ -85,7 +85,12 @@ If a campaign bible appears below, it is GM-ONLY. Write toward it. Never reveal 
 /** System prompt + this campaign's tone dials. Stable per campaign → stays in
  *  the cached prefix. */
 export function buildSystemPrompt(state: CampaignState): string {
-  return SYSTEM_PROMPT + toneFragment(state.meta.tone) + modePromptFragment(state);
+  let p = SYSTEM_PROMPT + toneFragment(state.meta.tone) + modePromptFragment(state);
+  if (state.campaignBible) {
+    // Stable per campaign → lives in the cached prefix, not the per-turn context.
+    p += `\n\n## The campaign bible (GM-ONLY)\n\n\`\`\`json\n${JSON.stringify(state.campaignBible, null, 2)}\n\`\`\``;
+  }
+  return p;
 }
 
 function trimSheet(sheet: unknown): unknown {
@@ -106,7 +111,7 @@ function trimSheet(sheet: unknown): unknown {
 
 /** Durable facts distilled from compressed turns (§5.3), plus the live world. */
 export function buildStateContext(state: CampaignState): string {
-  const { world, questLog, meta, character, campaignBible } = state;
+  const { world, questLog, meta, character } = state;
   const activeQuests = questLog.filter((q) => q.status === "active");
   const npcsWithFacts = world.npcs.filter((n) => n.notableFacts.length || n.sheet || n.status !== "alive");
 
@@ -130,7 +135,6 @@ export function buildStateContext(state: CampaignState): string {
       factions: world.factions,
     },
     activeQuests: activeQuests.map((q) => ({ id: q.id, title: q.title, summary: q.summary, flags: q.flags })),
-    campaignBible: campaignBible ?? undefined,
     combat: state.combat?.active
       ? {
           round: state.combat.round,

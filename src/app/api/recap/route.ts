@@ -14,7 +14,8 @@ import { CampaignState } from "@/lib/state/campaignState";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const MODEL = process.env.SOLO_MODEL || "claude-sonnet-5";
+// A recap is a short summary — a cheap model handles it well.
+const MODEL = process.env.SOLO_RECAP_MODEL || process.env.SOLO_COMPRESS_MODEL || "claude-haiku-4-5-20251001";
 
 const SYSTEM = `You write the "Previously on…" cold-open for a solo Cyberpunk RPG session the player is returning to. 3–5 sentences, second person ("you"), in a terse noir GM voice. Remind them where they are, who matters right now, what's unresolved, and anything primed to go wrong. Do NOT introduce new plot, and do NOT reveal anything the player hasn't discovered in the fiction. Output only the recap prose.`;
 
