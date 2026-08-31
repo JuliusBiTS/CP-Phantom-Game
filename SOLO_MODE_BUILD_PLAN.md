@@ -387,6 +387,8 @@ A new chat should ask these, not assume:
 > - **Also fixed**: the "unexpected tool_use_id" 400 that hit after ~7 messages — fact-compression was orphaning a tool_result; the split now skips leading tool_result messages and `drive()` sanitises the transcript before every API call.
 > 89 tests.
 >
+> **Mission Board (user request, 2026-08-31 — the sci-fi "case wall"):** `state.missionBoard` (windows / links / activeMissionQuestId / lastOpenedAt / blowUpAt); `lib/board/layout.ts` — `autoLayoutBoard` (mission-start blow-up: objective + intel NPCs + locations + factions + bible + connections, keeps pinned/note windows) and `syncBoard` (auto-spawn a collapsed window for anything newly mentioned). Delta: `missionBoard.{event:mission-start|mission-end, focusQuestId, pin[], addLinks[]}`. `MissionBoard.tsx` (hotkey `M`) — draggable/resizable HUD-grid canvas, window kinds dossier/objective/location/faction/note/connections/bible; editable in place (facts, disposition, flag checkboxes, notes); GM pins get the gold KEY-INTEL frame + note; red-string SVG links; undelivered bible twists as `█████` that un-declassify on `twistsDelivered`; NEW-since-last-open glow; stacked list on narrow screens. The old campaign-bible panel is absorbed. 8 tests. Follow-ups: draw-your-own links (tier 2), pan/zoom + portrait windows (tier 4).
+>
 > **The full user playtest against the live Anthropic API is the only thing left before calling the whole build done.**
 
 Test with the real user between every phase — don't build all three before he's touched anything.
