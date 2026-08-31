@@ -442,13 +442,19 @@ export default function Home() {
                   setAction(e.target.value);
                   setInterim("");
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!busy) submitAction();
+                  }
+                }}
                 rows={3}
                 style={{ width: "100%" }}
-                placeholder="Describe your action…"
+                placeholder="Describe your action…  (Enter to send · Shift+Enter for a new line)"
               />
               <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
                 <button onClick={submitAction} disabled={busy}>
-                  {busy ? "GM is thinking…" : "Act"}
+                  {busy ? "GM is thinking…" : "Act ⏎"}
                 </button>
                 <DictationButton
                   onFinalText={(t) => {
