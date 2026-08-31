@@ -297,6 +297,35 @@ export default function Home() {
             </section>
           )}
 
+          <details style={{ margin: "12px 0", fontSize: 12 }}>
+            <summary style={{ cursor: "pointer", fontSize: 15, fontWeight: 700 }}>
+              Session log ({state.sessionLog.length}) — roll audit
+            </summary>
+            <div style={{ fontFamily: "ui-monospace, monospace", marginTop: 6, maxHeight: 320, overflowY: "auto", border: "1px solid #eee", padding: 8 }}>
+              {[...state.sessionLog].reverse().map((l, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: "2px 0",
+                    color:
+                      l.type === "roll" ? (l.roll?.isPC ? "#0a6" : "#b00020") : l.type === "system" ? "#888" : l.type === "action" ? "#059" : "#333",
+                  }}
+                >
+                  <span style={{ opacity: 0.5 }}>{new Date(l.ts).toLocaleTimeString()} </span>
+                  {l.type === "roll" && l.roll ? (
+                    <>
+                      [{l.roll.source === "engine" ? "ENGINE" : "PLAYER"}] {l.text}
+                    </>
+                  ) : (
+                    <>
+                      [{l.type}] {l.text.length > 240 ? l.text.slice(0, 240) + "…" : l.text}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+
           {pending ? (
             <section style={{ border: "2px solid #7a1428", padding: 12, margin: "12px 0" }}>
               <h2 style={{ fontSize: 15, marginTop: 0 }}>Your roll</h2>

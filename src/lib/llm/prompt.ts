@@ -56,6 +56,7 @@ function trimSheet(sheet: unknown): unknown {
     "stats", "hp_max", "hp_current", "stamina_max", "stamina_current", "ip_max", "ip_current",
     "humanity_max", "humanity_current", "armor_body", "armor_head", "cyberware", "weapons",
     "talents", "techniques", "hacks", "abilities", "inventory", "status_effects", "eurodollar", "notes",
+    "_generated", // pre-computed primaryPw / reactionPw for a generated NPC — saves recomputing
   ];
   const out: Record<string, unknown> = {};
   for (const k of keep) if (k in s) out[k] = s[k];
