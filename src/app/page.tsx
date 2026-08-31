@@ -15,6 +15,7 @@ import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, ty
 import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
 import { DictationButton } from "@/components/DictationButton";
 import { LifePathWizard } from "@/components/LifePathWizard";
+import { CombatTracker } from "@/components/CombatTracker";
 
 type TurnResult =
   | { kind: "awaiting-player-roll"; state: CampaignState; prompt: PlayerRollPrompt; narrationSoFar: string }
@@ -182,7 +183,7 @@ export default function Home() {
     <main style={{ maxWidth: 940, margin: "0 auto", padding: "28px 20px 80px" }}>
       <h1>CP PHANTOM — SOLO</h1>
       <div className="muted" style={{ fontSize: 10, letterSpacing: "0.3em", marginTop: 4 }}>
-        PHASE 2 · SOLO COMPANION
+        Night City Sprawl · Solo Companion
       </div>
 
       <section style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "18px 0" }}>
@@ -349,6 +350,8 @@ export default function Home() {
               </div>
             </section>
           )}
+
+          <CombatTracker state={state} />
 
           <section style={{ margin: "14px 0" }}>
             <h2>Narration</h2>
