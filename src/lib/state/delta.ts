@@ -8,9 +8,10 @@
  */
 
 import { z } from "zod";
-import type { CampaignState } from "./campaignState";
+import type { CampaignState, MissionBoard } from "./campaignState";
 import { applyAutoStatusEffect, tickCombatant, type StatusEffect, type StatusSpec } from "../rules/statusEffects";
 import { matchWeaponName } from "../rules/live";
+import { autoLayoutBoard, syncBoard } from "../board/layout";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -107,6 +108,39 @@ export const TurnDelta = z.object({
    *  = 2), and weapons reloaded (magazine refills to max). */
   pcAmmoSpent: z.array(z.object({ weapon: z.string(), rounds: z.number() })).optional(),
   pcReload: z.array(z.string()).optional(),
+
+  /** Mission Board — SOLO_MODE_BUILD_PLAN.md §13. Facts/NPCs/locations flow
+   *  through the fields above and appear on the board automatically; this is
+   *  just the extra signals. */
+  missionBoard: z
+    .object({
+      /** "mission-start" triggers the auto-layout blow-up around focusQuestId. */
+      event: z.enum(["mission-start", "mission-end"]).optional(),
+      focusQuestId: z.string().optional(),
+      /** Feature specific intel as a prominent, never-auto-tidied window. */
+      pin: z
+        .array(
+          z.object({
+            kind: z.enum(["dossier", "objective", "location", "faction", "note"]),
+            refId: z.string().optional(),
+            note: z.string().optional(),
+          }),
+        )
+        .optional(),
+      /** Red-string connections between windows, resolved from kind+refId. */
+      addLinks: z
+        .array(
+          z.object({
+            fromKind: z.enum(["dossier", "objective", "location", "faction"]),
+            fromRefId: z.string(),
+            toKind: z.enum(["dossier", "objective", "location", "faction"]),
+            toRefId: z.string(),
+            label: z.string().optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
 
   inGameDate: z.string().optional(),
 });
@@ -317,6 +351,60 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
   }
 
   if (delta.inGameDate) s.meta.inGameDate = delta.inGameDate;
+
+  // ── Mission Board ────────────────────────────────────────────────────────
+  applyBoardDelta(s, delta.missionBoard);
+  s.missionBoard = syncBoard(s); // spawn windows for anything newly mentioned
+
   s.meta.lastPlayedAt = Date.now();
   return s;
+}
+
+type BoardKind = MissionBoard["windows"][number]["kind"];
+
+function ensureBoardWindow(board: MissionBoard, kind: BoardKind, refId: string | null): MissionBoard["windows"][number] {
+  let w = board.windows.find((x) => x.kind === kind && x.refId === refId);
+  if (!w) {
+    const n = board.windows.length;
+    w = {
+      id: `w_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+      kind,
+      refId,
+      x: 24 + (n % 3) * 324,
+      y: 24 + Math.floor(n / 3) * 234,
+      w: 300,
+      h: 210,
+      z: 1,
+      collapsed: false,
+      pinned: false,
+      noteText: "",
+      createdAt: Date.now(),
+    };
+    board.windows.push(w);
+  }
+  return w;
+}
+
+function applyBoardDelta(s: CampaignState, mb: TurnDelta["missionBoard"]): void {
+  if (!mb) return;
+
+  if (mb.event === "mission-start") {
+    s.missionBoard = autoLayoutBoard(s, mb.focusQuestId ?? null);
+  } else if (mb.event === "mission-end") {
+    s.missionBoard.activeMissionQuestId = null;
+  }
+
+  for (const p of mb.pin ?? []) {
+    const w = ensureBoardWindow(s.missionBoard, p.kind, p.refId ?? null);
+    w.pinned = true;
+    if (p.note) w.gmNote = p.note;
+  }
+
+  for (const l of mb.addLinks ?? []) {
+    const a = ensureBoardWindow(s.missionBoard, l.fromKind, l.fromRefId);
+    const b = ensureBoardWindow(s.missionBoard, l.toKind, l.toRefId);
+    if (!s.missionBoard.links.some((x) => (x.from === a.id && x.to === b.id) || (x.from === b.id && x.to === a.id))) {
+      s.missionBoard.links.push({ id: `lk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, from: a.id, to: b.id, label: l.label });
+    }
+  }
 }

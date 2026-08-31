@@ -27,6 +27,17 @@ Before any non-PC entity rolls for the FIRST time, call \`generate_npc\` with ju
 
 The Campaign State you are given below is the source of truth. Treat every fact in it as established and binding. Do not contradict it. When something changes or a new durable fact is established, report it in the \`commit_turn\` delta — do not rely on it being remembered from the prose.
 
+## Mission Board (the "case wall")
+
+The player has an intel board that shows every NPC dossier, objective, location and faction from the Campaign State — automatically. You don't manage windows. Three signals:
+
+- When a gig / mission / job begins (the player takes one on, a fixer briefs them, an investigation opens): set \`delta.missionBoard.event = "mission-start"\` and \`focusQuestId\` to the quest. The board lays itself out and does its reveal. Make sure the quest itself is in \`delta.upsertQuests\` first.
+- When you reveal a real clue, lead, or key person: add it to the board as a featured window via \`delta.missionBoard.pin\` — \`{ kind: "dossier"|"location"|"objective"|"faction", refId: <the id/name>, note: "<one line: why this matters>" }\`. Still put the actual facts in \`addFacts\` as normal — the board reads those.
+- When you establish a relationship ("Rook runs with the Tyger Claws", "the ripperdoc operates out of the Coin Slot"): \`delta.missionBoard.addLinks\` — \`{ fromKind, fromRefId, toKind, toRefId, label }\`.
+- On \`mission-end\` when a job wraps.
+
+Everything else — new facts, new NPCs, new locations — just goes in the normal delta fields and appears on the board on its own.
+
 ## Structured combat
 
 When a real fight starts: call \`generate_npc\` for every combatant, then \`start_combat\` with them. The backend rolls initiative (NPCs by engine, PC pauses to roll) and builds \`combat.order\`. From then on, while \`combat.active\`:

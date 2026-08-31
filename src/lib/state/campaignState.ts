@@ -140,6 +140,50 @@ export const Combat = z.object({
 });
 export type Combat = z.infer<typeof Combat>;
 
+/** Mission Board — the "case wall" of intel windows. SOLO_MODE_BUILD_PLAN.md §13.
+ *  Mostly a view over world.npcs / knownLocations / questLog / factions; this
+ *  holds only layout + GM pins + player annotations + link graph. */
+export const BoardWindowKind = z.enum(["dossier", "objective", "location", "faction", "note", "connections", "bible"]);
+
+export const BoardWindow = z.object({
+  id: z.string(),
+  kind: BoardWindowKind,
+  /** npc id / quest id / location name / faction name; null for note/connections/bible. */
+  refId: z.string().nullable().default(null),
+  x: z.number().default(40),
+  y: z.number().default(40),
+  w: z.number().default(280),
+  h: z.number().default(200),
+  z: z.number().default(1),
+  collapsed: z.boolean().default(false),
+  /** GM-featured ("key intel") — never auto-removed, gets the prominent frame. */
+  pinned: z.boolean().default(false),
+  /** One-line GM annotation ("the lead — press them on the Militech job"). */
+  gmNote: z.string().optional(),
+  /** Free player note text (the whole body for kind:"note"; an annotation otherwise). */
+  noteText: z.string().default(""),
+  createdAt: z.number(),
+});
+
+export const BoardLink = z.object({
+  id: z.string(),
+  from: z.string(), // window id
+  to: z.string(),
+  label: z.string().optional(),
+});
+
+export const MissionBoard = z.object({
+  windows: z.array(BoardWindow).default([]),
+  links: z.array(BoardLink).default([]),
+  /** Quest id of the mission the board is currently framed around. */
+  activeMissionQuestId: z.string().nullable().default(null),
+  /** For the "NEW since you last looked" highlight. */
+  lastOpenedAt: z.number().default(0),
+  /** Bumped on mission-start so the UI can replay the blow-up animation once. */
+  blowUpAt: z.number().default(0),
+});
+export type MissionBoard = z.infer<typeof MissionBoard>;
+
 export const CampaignBible = z.object({
   antagonist: z.string(),
   drivingConflict: z.string(),
@@ -183,6 +227,7 @@ export const CampaignState = z.object({
   }),
   questLog: z.array(QuestEntry).default([]),
   campaignBible: CampaignBible.optional(),
+  missionBoard: MissionBoard.default({ windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 }),
   combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null }),
   sessionLog: z.array(SessionLogEntry).default([]),
   pendingChangeset: z.array(PendingChange).default([]),
@@ -235,6 +280,7 @@ export function newCampaignState(args: {
     character: args.character,
     world: { currentLocation: "", knownLocations: [], npcs: [], factions: [] },
     questLog: [],
+    missionBoard: { windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 },
     combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null },
     sessionLog: [],
     pendingChangeset: [],
