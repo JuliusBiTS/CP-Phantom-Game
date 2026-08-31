@@ -66,6 +66,17 @@ export async function maybeCompress(state: CampaignState, opts: CompressOpts): P
       }
     }
   }
+  // The kept window must NOT start with a user message that carries orphaned
+  // tool_result blocks (their tool_use just got compressed away) — the API
+  // rejects that. Advance the split past any such leading messages.
+  const isToolResultMsg = (m: Anthropic.MessageParam) =>
+    m.role === "user" &&
+    Array.isArray(m.content) &&
+    m.content.some((b) => typeof b === "object" && b !== null && (b as { type?: string }).type === "tool_result");
+  while (splitIdx < transcript.length && isToolResultMsg(transcript[splitIdx] as Anthropic.MessageParam)) {
+    splitIdx++;
+  }
+
   const toCompress = transcript.slice(0, splitIdx);
   const toKeep = transcript.slice(splitIdx);
   if (toCompress.length === 0) return s;

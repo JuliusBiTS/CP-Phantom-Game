@@ -27,6 +27,19 @@ Before any non-PC entity rolls for the FIRST time, call \`generate_npc\` with ju
 
 The Campaign State you are given below is the source of truth. Treat every fact in it as established and binding. Do not contradict it. When something changes or a new durable fact is established, report it in the \`commit_turn\` delta — do not rely on it being remembered from the prose.
 
+## Structured combat
+
+When a real fight starts: call \`generate_npc\` for every combatant, then \`start_combat\` with them. The backend rolls initiative (NPCs by engine, PC pauses to roll) and builds \`combat.order\`. From then on, while \`combat.active\`:
+
+- Resolve turns in \`combat.order\` sequence, starting at \`combat.turnIndex\`. One combatant acts per position.
+- NPC turn → \`roll_dice\` for their action (attack, etc.), passing their cached PW from \`world.npcs[id].sheet\` and the target's armor SP.
+- PC turn → \`request_player_roll\`. Also request a roll whenever the PC gets a *reaction* (an enemy attacks them and they may dodge — Reaction PW from \`pcPwReference\`).
+- Read \`combat.order[].cover\` / \`.rangeFromPcM\` and \`combat.pcTargetId\` from the state — the PLAYER sets these. Apply cover (v12 §18: fully behind cover = can't be targeted directly) and the distance PW-halving (§7.7: beyond effective range = one halving source) from those real values, not guesses.
+- Every turn, in \`commit_turn\`'s \`delta.combat\`: set \`turnIndex\` to the new position, bump \`round\` by 1 when the order wraps past the end (the backend then ticks Bleed/Burn/Poison and per-round regen — you don't narrate DoT damage numbers, the backend applies them), and list \`removeCombatantIds\` for anyone who dropped this turn.
+- NPC HP/status changes go in \`delta.npcHpChanges\` / \`delta.npcStatusEffects\` (by \`world.npcs\` id), exactly like the PC's — every combatant's HP is tracked, never narrated loosely.
+- Stop and \`commit_turn\` when it reaches the PC's turn to act. When no hostiles remain (or the PC flees / it ends), set \`delta.combat.end = true\`.
+- Status effects: pass \`{ "type": "bleed"|"burn"|"poison", "name": "...", "rounds": N }\` objects (rounds −1 = until treated) so the backend can tick their damage. A bare string works for non-mechanical effects.
+
 ## Ending a turn
 
 When the immediate beat is resolved (and you are not waiting on a player roll), call \`commit_turn\` exactly once with:
@@ -88,6 +101,23 @@ export function buildStateContext(state: CampaignState): string {
     },
     activeQuests: activeQuests.map((q) => ({ id: q.id, title: q.title, summary: q.summary, flags: q.flags })),
     campaignBible: campaignBible ?? undefined,
+    combat: state.combat?.active
+      ? {
+          round: state.combat.round,
+          turnIndex: state.combat.turnIndex,
+          currentCombatant: state.combat.order[state.combat.turnIndex]?.name,
+          order: state.combat.order.map((o, i) => ({
+            index: i,
+            id: o.id,
+            name: o.name,
+            isPC: o.isPC,
+            initiative: o.initiative,
+            cover: o.cover,
+            rangeFromPcM: o.rangeFromPcM,
+          })),
+          pcTargetId: state.combat.pcTargetId,
+        }
+      : undefined,
   };
 
   let pwBlock = "";

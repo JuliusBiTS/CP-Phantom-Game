@@ -26,7 +26,14 @@ export const TOOL_NAMES = {
   playerRoll: "request_player_roll",
   commit: "commit_turn",
   generateNpc: "generate_npc",
+  startCombat: "start_combat",
 } as const;
+
+export const StartCombatInput = z.object({
+  combatants: z
+    .array(z.object({ id: z.string(), name: z.string() }))
+    .describe("Every NON-PC entity entering the fight (must already be generated via generate_npc). The PC is added automatically."),
+});
 
 /**
  * NPC concept fields — the model picks tier + archetype + gear NAMES only, never
@@ -104,5 +111,11 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     description:
       "Generate a real, deterministic stat block for a non-PC before it first needs to roll. You pick ONLY the concept (tier, archetype, gear names) — the backend computes every number (attributes, HP, PW, armor SP). NEVER invent an NPC's stats yourself. The result is cached on world.npcs[id].sheet; reuse those numbers for that NPC's later rolls instead of regenerating.",
     input_schema: toInputSchema(GenerateNpcInput),
+  },
+  {
+    name: TOOL_NAMES.startCombat,
+    description:
+      "Begin structured combat when a fight breaks out. The backend rolls initiative for the NPCs (real dice) and pauses for the PC to roll theirs, then builds the turn order. Call generate_npc for every combatant FIRST. After this, the Campaign State carries combat.active / round / turn order — resolve turns in that order, pause on the PC's turn, and keep combat.turnIndex / combat.round updated in commit_turn's delta.",
+    input_schema: toInputSchema(StartCombatInput),
   },
 ];

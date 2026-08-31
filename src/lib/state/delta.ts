@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import type { CampaignState } from "./campaignState";
+import { applyAutoStatusEffect, tickCombatant, type StatusEffect, type StatusSpec } from "../rules/statusEffects";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -16,9 +17,35 @@ export const TurnDelta = z.object({
   pcStaminaChange: z.number().optional(),
   pcIpChange: z.number().optional(),
   pcHumanityChange: z.number().optional(),
-  /** Status effects added to / removed from the PC by name. */
-  addStatusEffects: z.array(z.string()).optional(),
+  /** Status effects added to / removed from the PC. A string is a bare name;
+   *  an object carries the mechanical spec (type drives DoT: bleed/burn/poison). */
+  addStatusEffects: z.array(z.union([z.string(), z.record(z.string(), z.any())])).optional(),
   removeStatusEffects: z.array(z.string()).optional(),
+
+  /** Combat: per-NPC HP + status, tracked exactly like the PC (§ "no
+   *  hallucinations in fights"). id = the world.npcs id. */
+  npcHpChanges: z
+    .array(z.object({ id: z.string(), hpChange: z.number(), staminaChange: z.number().optional() }))
+    .optional(),
+  npcStatusEffects: z
+    .array(
+      z.object({
+        id: z.string(),
+        add: z.array(z.union([z.string(), z.record(z.string(), z.any())])).optional(),
+        remove: z.array(z.string()).optional(),
+      }),
+    )
+    .optional(),
+
+  /** Combat structure updates. `round` incremented → backend ticks DoT/regen. */
+  combat: z
+    .object({
+      turnIndex: z.number().optional(),
+      round: z.number().optional(),
+      removeCombatantIds: z.array(z.string()).optional(),
+      end: z.boolean().optional(),
+    })
+    .optional(),
 
   moveToLocation: z.string().optional(),
   addKnownLocation: z
@@ -83,6 +110,38 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
 
+/** Normalise a delta status entry (string | spec object) into a StatusSpec. */
+function toSpec(entry: string | Record<string, unknown>): StatusSpec {
+  if (typeof entry === "string") {
+    const type = entry.toLowerCase().split(/\s|\(/)[0];
+    return { type, name: entry, rounds: -1 };
+  }
+  const e = entry as Record<string, unknown>;
+  return {
+    type: String(e.type ?? e.name ?? "effect").toLowerCase(),
+    name: String(e.name ?? e.type ?? "effect"),
+    rounds: typeof e.rounds === "number" ? e.rounds : -1,
+    ...(typeof e.stacks === "number" ? { stacks: e.stacks } : {}),
+    ...(typeof e.maxStacks === "number" ? { maxStacks: e.maxStacks } : {}),
+  };
+}
+
+function mutateStatus(
+  current: unknown,
+  add?: Array<string | Record<string, unknown>>,
+  remove?: string[],
+): StatusEffect[] {
+  let effects: StatusEffect[] = Array.isArray(current) ? (current as StatusEffect[]) : [];
+  if (remove?.length) {
+    const rm = new Set(remove.map((x) => x.toLowerCase()));
+    effects = effects.filter(
+      (e) => !rm.has(String(e.name ?? "").toLowerCase()) && !rm.has(String(e.type ?? "").toLowerCase()),
+    );
+  }
+  for (const entry of add ?? []) effects = applyAutoStatusEffect(effects, toSpec(entry));
+  return effects;
+}
+
 /** Pure: returns a new state with the delta applied. */
 export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignState {
   const s: CampaignState = structuredClone(state);
@@ -102,17 +161,71 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
   }
 
   if (delta.addStatusEffects?.length || delta.removeStatusEffects?.length) {
-    const effects: Array<{ name?: string; type?: string }> = Array.isArray(c.status_effects)
-      ? c.status_effects
-      : [];
-    const remove = new Set((delta.removeStatusEffects ?? []).map((x) => x.toLowerCase()));
-    const kept = effects.filter((e) => !remove.has(String(e.name ?? e.type ?? "").toLowerCase()));
-    for (const name of delta.addStatusEffects ?? []) {
-      if (!kept.some((e) => String(e.name ?? e.type ?? "").toLowerCase() === name.toLowerCase())) {
-        kept.push({ name });
+    c.status_effects = mutateStatus(c.status_effects, delta.addStatusEffects, delta.removeStatusEffects);
+  }
+
+  // ── Combat: NPC HP + status, tracked like the PC ──────────────────────────
+  const npcById = (id: string) => s.world.npcs.find((n) => n.id === id);
+  for (const ch of delta.npcHpChanges ?? []) {
+    const npc = npcById(ch.id);
+    const sheet = npc?.sheet as { hp_max?: number; hp_current?: number; stamina_max?: number; stamina_current?: number } | undefined;
+    if (!sheet?.hp_max) continue;
+    sheet.hp_current = Math.max(-((npc!.sheet as { stats?: Record<string, number> })?.stats?.grit ?? 0), Math.min(sheet.hp_max, (sheet.hp_current ?? sheet.hp_max) + ch.hpChange));
+    if (ch.staminaChange != null && sheet.stamina_max != null) {
+      sheet.stamina_current = clamp((sheet.stamina_current ?? sheet.stamina_max) + ch.staminaChange, 0, sheet.stamina_max);
+    }
+    if (npc && sheet.hp_current <= 0) npc.status = "dead";
+  }
+  for (const se of delta.npcStatusEffects ?? []) {
+    const npc = npcById(se.id);
+    if (!npc?.sheet) continue;
+    (npc.sheet as { status_effects?: unknown }).status_effects = mutateStatus(
+      (npc.sheet as { status_effects?: unknown }).status_effects,
+      se.add,
+      se.remove,
+    );
+  }
+
+  // ── Combat structure + deterministic round tick ──────────────────────────
+  if (delta.combat) {
+    const combat = s.combat;
+    if (delta.combat.end) {
+      combat.active = false;
+      combat.order = [];
+      combat.pcTargetId = null;
+      combat.lastPcAction = null;
+    } else {
+      if (delta.combat.removeCombatantIds?.length) {
+        const rm = new Set(delta.combat.removeCombatantIds);
+        combat.order = combat.order.filter((o) => !rm.has(o.id));
+      }
+      if (delta.combat.turnIndex != null && combat.order.length) {
+        combat.turnIndex = ((delta.combat.turnIndex % combat.order.length) + combat.order.length) % combat.order.length;
+      }
+      if (delta.combat.round != null && delta.combat.round > combat.round) {
+        const roundsPassed = delta.combat.round - combat.round;
+        combat.round = delta.combat.round;
+        for (let r = 0; r < roundsPassed; r++) {
+          for (const entry of combat.order) {
+            const target =
+              entry.id === "PC"
+                ? (c as Parameters<typeof tickCombatant>[0])
+                : (npcById(entry.id)?.sheet as Parameters<typeof tickCombatant>[0] | undefined);
+            if (!target) continue;
+            const res = tickCombatant(target, entry.name);
+            target.hp_current = res.hp_current;
+            target.stamina_current = res.stamina_current;
+            if (target.ip_current != null || res.ip_current) target.ip_current = res.ip_current;
+            target.status_effects = res.status_effects;
+            for (const line of res.log) {
+              s.sessionLog.push({ ts: Date.now(), type: "system", text: `Round tick — ${line}`, compressed: false });
+            }
+            const npc = npcById(entry.id);
+            if (npc && (target.hp_current ?? 1) <= 0) npc.status = "dead";
+          }
+        }
       }
     }
-    c.status_effects = kept;
   }
 
   if (delta.moveToLocation) s.world.currentLocation = delta.moveToLocation;

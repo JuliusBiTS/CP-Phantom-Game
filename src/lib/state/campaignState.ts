@@ -108,6 +108,38 @@ export const SessionLogEntry = z.object({
 });
 export type SessionLogEntry = z.infer<typeof SessionLogEntry>;
 
+/** Structured combat state — SOLO_MODE_BUILD_PLAN.md §12 Phase 3. Everything
+ *  tracked: initiative order, round, whose turn, per-target range/cover, ammo. */
+export const CombatCombatant = z.object({
+  id: z.string(), // "PC" for the player, else the world.npcs id
+  name: z.string(),
+  isPC: z.boolean(),
+  initiative: z.number(),
+  initiativeOutcome: z.string(),
+  /** Cover from the direction of incoming fire — v12 §18 (binary: behind or not). */
+  cover: z.enum(["none", "behind"]).default("none"),
+  coverMaterial: z.string().optional(),
+  coverHp: z.number().nullable().default(null),
+  /** Range in metres from the PC (for the PC's own attacks; NPC↔NPC is GM-narrated). */
+  rangeFromPcM: z.number().nullable().default(null),
+});
+
+export const Combat = z.object({
+  active: z.boolean().default(false),
+  round: z.number().default(1),
+  /** Index into `order` whose turn it is. */
+  turnIndex: z.number().default(0),
+  order: z.array(CombatCombatant).default([]),
+  /** NPC id the PC is currently targeting. */
+  pcTargetId: z.string().nullable().default(null),
+  /** For "repeat last attack". */
+  lastPcAction: z
+    .object({ weapon: z.string(), mode: z.string(), targetId: z.string().nullable() })
+    .nullable()
+    .default(null),
+});
+export type Combat = z.infer<typeof Combat>;
+
 export const CampaignBible = z.object({
   antagonist: z.string(),
   drivingConflict: z.string(),
@@ -151,6 +183,7 @@ export const CampaignState = z.object({
   }),
   questLog: z.array(QuestEntry).default([]),
   campaignBible: CampaignBible.optional(),
+  combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null }),
   sessionLog: z.array(SessionLogEntry).default([]),
   pendingChangeset: z.array(PendingChange).default([]),
   /** Set while a turn is suspended waiting for the player's physical roll. */
@@ -162,9 +195,13 @@ export const CampaignState = z.object({
       pw: z.number(),
       diceInstruction: z.string(),
       dv: z.number().nullable(),
+      /** "action" = normal PC roll; "initiative" = resume builds the turn order. */
+      kind: z.enum(["action", "initiative"]).default("action"),
     })
     .nullable()
     .default(null),
+  /** NPC initiative rolls held while the PC rolls theirs (combat start). */
+  pendingInitiative: z.any().nullable().default(null),
   /** Raw Anthropic message history for the current turn, persisted only while
    *  the turn is suspended on a pending player roll so it can be resumed. */
   pendingTurnMessages: z.array(z.any()).nullable().default(null),
@@ -198,9 +235,11 @@ export function newCampaignState(args: {
     character: args.character,
     world: { currentLocation: "", knownLocations: [], npcs: [], factions: [] },
     questLog: [],
+    combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null },
     sessionLog: [],
     pendingChangeset: [],
     pendingPlayerRoll: null,
+    pendingInitiative: null,
     pendingTurnMessages: null,
     transcript: [],
     turnsSinceCompression: 0,
