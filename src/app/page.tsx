@@ -22,6 +22,7 @@ import { MissionBoard } from "@/components/MissionBoard";
 import { TranscriptView } from "@/components/TranscriptView";
 import { popHistory } from "@/lib/state/history";
 import { estimateCostUsd, formatCostUsd } from "@/lib/llm/cost";
+import { runTurnStream, StreamUnavailable } from "@/lib/llm/streamClient";
 
 type CharacterSheetType = CharacterSheet;
 
@@ -66,6 +67,7 @@ export default function Home() {
   const [interim, setInterim] = useState("");
   const [pending, setPending] = useState<PlayerRollPrompt | null>(null);
   const [lastRolls, setLastRolls] = useState<EngineRoll[]>([]);
+  const [streamText, setStreamText] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
@@ -152,33 +154,69 @@ export default function Home() {
     await persist(s);
   }
 
+  async function applyTurnResult(data: TurnResult) {
+    await persist(data.state);
+    if (data.kind === "awaiting-player-roll") {
+      setPending(data.prompt);
+      setLastRolls([]);
+    } else {
+      setPending(null);
+      setLastRolls(data.rolls);
+    }
+  }
+
+  async function sendTurnBlocking(input: unknown) {
+    if (!state) return;
+    const res = await fetch("/api/turn", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, input }),
+    });
+    const data = (await res.json()) as TurnResult | { error: string };
+    if (!res.ok || "error" in data) {
+      setError(("error" in data && data.error) || "turn failed");
+      return;
+    }
+    await applyTurnResult(data);
+  }
+
   async function sendTurn(input: unknown) {
     if (!state) return;
     setBusy(true);
     setError(null);
+    setStreamText("");
+    setLastRolls([]);
+    const rolls: EngineRoll[] = [];
+    let finalResult: TurnResult | null = null;
     try {
-      const res = await fetch("/api/turn", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ state, input }),
-      });
-      const data = (await res.json()) as TurnResult | { error: string };
-      if (!res.ok || "error" in data) {
-        setError(("error" in data && data.error) || "turn failed");
-        return;
-      }
-      await persist(data.state);
-      if (data.kind === "awaiting-player-roll") {
-        setPending(data.prompt);
-        setLastRolls([]);
-      } else {
-        setPending(null);
-        setLastRolls(data.rolls);
-      }
+      await runTurnStream(
+        { state, input },
+        {
+          onText: (d) => setStreamText((t) => t + d),
+          onRoll: (r) => {
+            rolls.push(r as EngineRoll);
+            setLastRolls([...rolls]);
+          },
+          onDone: (data) => {
+            finalResult = data as unknown as TurnResult;
+          },
+          onError: (m) => setError(m),
+        },
+      );
+      if (finalResult) await applyTurnResult(finalResult);
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof StreamUnavailable) {
+        try {
+          await sendTurnBlocking(input);
+        } catch (e2) {
+          setError((e2 as Error).message);
+        }
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setBusy(false);
+      setStreamText("");
     }
   }
 
@@ -360,9 +398,18 @@ export default function Home() {
           <CombatTracker state={state} onPatchCombat={patchCombat} />
 
           <section style={{ margin: "14px 0" }}>
-            <h2>Narration</h2>
+            <h2>Narration{busy && <span className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}> · LIVE</span>}</h2>
             <div className="panel" style={{ whiteSpace: "pre-wrap", minHeight: 90, lineHeight: 1.7 }}>
-              {[...state.sessionLog].reverse().find((l) => l.type === "narration")?.text ?? "—"}
+              {streamText ? (
+                <>
+                  {streamText}
+                  <span className="stream-caret">▋</span>
+                </>
+              ) : busy ? (
+                <span className="muted">GM is thinking…</span>
+              ) : (
+                [...state.sessionLog].reverse().find((l) => l.type === "narration")?.text ?? "—"
+              )}
             </div>
           </section>
 

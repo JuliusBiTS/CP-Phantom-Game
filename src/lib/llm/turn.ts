@@ -71,6 +71,13 @@ export interface EngineRoll {
   damage?: number;
 }
 
+/** Streamed to the client mid-turn (FEATURE_PLAN.md §1.2). Terminal states
+ *  (awaiting-player-roll / turn-complete) are the `TurnResult` return value. */
+export type TurnEvent =
+  | { type: "text"; delta: string }
+  | { type: "roll"; roll: EngineRoll };
+export type TurnEventSink = (ev: TurnEvent) => void;
+
 function client() {
   return new Anthropic(); // resolves ANTHROPIC_API_KEY / auth profile from env
 }
@@ -288,6 +295,7 @@ function rollInitiativeForFromTyped(state: CampaignState, pw: number, dice: numb
 async function drive(
   state: CampaignState,
   seedMessages: Anthropic.MessageParam[],
+  onEvent?: TurnEventSink,
 ): Promise<TurnResult> {
   const anthropic = client();
   const messages: Anthropic.MessageParam[] = [...seedMessages];
@@ -295,7 +303,7 @@ async function drive(
   let narration = "";
 
   for (let i = 0; i < MAX_LOOP_ITERATIONS; i++) {
-    const response = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: [
@@ -304,6 +312,8 @@ async function drive(
       tools: TURN_TOOLS,
       messages,
     });
+    if (onEvent) stream.on("text", (delta) => onEvent({ type: "text", delta }));
+    const response = await stream.finalMessage();
 
     state.meta.usage = addUsage(state.meta.usage, response.usage);
     narration = [narration, textOf(response.content)].filter(Boolean).join("\n\n");
@@ -325,6 +335,7 @@ async function drive(
       if (tu.name === TOOL_NAMES.roll) {
         const { result, roll } = executeRollDice(state, tu.input);
         rolls.push(roll);
+        onEvent?.({ type: "roll", roll });
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.generateNpc) {
         const result = executeGenerateNpc(state, tu.input);
@@ -393,7 +404,11 @@ function persistTranscript(state: CampaignState, messages: Anthropic.MessagePara
   state.pendingTurnMessages = null;
 }
 
-export async function runTurn(state: CampaignState, input: TurnInput): Promise<TurnResult> {
+export async function runTurn(
+  state: CampaignState,
+  input: TurnInput,
+  onEvent?: TurnEventSink,
+): Promise<TurnResult> {
   let working: CampaignState = structuredClone(state);
 
   if (input.kind === "action") {
@@ -404,7 +419,7 @@ export async function runTurn(state: CampaignState, input: TurnInput): Promise<T
     working.sessionLog.push({ ts: Date.now(), type: "action", text: input.text, compressed: false });
     const userContent = `${buildStateContext(working)}\n\n---\n\nPlayer action: ${input.text}`;
     const seed = messagesFor(working, [{ role: "user", content: userContent }]);
-    return drive(working, seed);
+    return drive(working, seed, onEvent);
   }
 
   // resume: input.kind === 'playerRoll'
@@ -467,7 +482,7 @@ export async function runTurn(state: CampaignState, input: TurnInput): Promise<T
     working.pendingPlayerRoll = null;
     working.pendingInitiative = null;
     working.pendingTurnMessages = null;
-    return drive(working, resumeMsg);
+    return drive(working, resumeMsg, onEvent);
   }
 
   working.sessionLog.push({
@@ -505,5 +520,5 @@ export async function runTurn(state: CampaignState, input: TurnInput): Promise<T
   ];
   working.pendingPlayerRoll = null;
   working.pendingTurnMessages = null;
-  return drive(working, resumeMessages);
+  return drive(working, resumeMessages, onEvent);
 }

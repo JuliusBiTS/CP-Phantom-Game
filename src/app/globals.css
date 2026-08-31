@@ -653,3 +653,15 @@ code {
   cursor: nwse-resize;
   background: linear-gradient(135deg, transparent 50%, var(--cyan-dim) 50%);
 }
+
+/* ── Streaming narration caret ── FEATURE_PLAN.md §M2 */
+.stream-caret {
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--cyan);
+  animation: stream-blink 1s steps(1) infinite;
+}
+@keyframes stream-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .stream-caret { animation: none; }
+}
