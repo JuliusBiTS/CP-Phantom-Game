@@ -244,8 +244,9 @@ export function markCache(m: Anthropic.MessageParam): Anthropic.MessageParam {
     return { ...m, content: [{ type: "text", text: m.content, cache_control: cc }] };
   }
   if (Array.isArray(m.content) && m.content.length) {
-    const blocks = m.content.slice();
-    blocks[blocks.length - 1] = { ...(blocks[blocks.length - 1] as object), cache_control: cc } as (typeof blocks)[number];
+    const blocks = [...m.content];
+    const last = blocks[blocks.length - 1];
+    blocks[blocks.length - 1] = { ...last, cache_control: cc } as unknown as typeof last;
     return { ...m, content: blocks };
   }
   return m;

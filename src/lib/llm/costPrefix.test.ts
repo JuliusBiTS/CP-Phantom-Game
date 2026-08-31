@@ -39,7 +39,7 @@ describe("markCache", () => {
         { type: "text", text: "b" },
       ],
     });
-    const blocks = m.content as Array<Record<string, unknown>>;
+    const blocks = m.content as unknown as Array<Record<string, unknown>>;
     expect(blocks[0].cache_control).toBeUndefined();
     expect(blocks[1].cache_control).toEqual({ type: "ephemeral" });
   });
