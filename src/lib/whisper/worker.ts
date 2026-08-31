@@ -19,19 +19,43 @@ const MODEL_ID = "Xenova/whisper-tiny.en";
 
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 
-function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
-  if (!transcriberPromise) {
-    transcriberPromise = pipeline("automatic-speech-recognition", MODEL_ID, {
-      progress_callback: (p: unknown) => {
-        const prog = p as { status?: string; progress?: number };
-        if (prog.status === "progress" && typeof prog.progress === "number") {
-          self.postMessage({ type: "progress", pct: Math.round(prog.progress) });
-        } else if (prog.status === "ready") {
-          self.postMessage({ type: "ready" });
-        }
-      },
-    }) as Promise<AutomaticSpeechRecognitionPipeline>;
+/**
+ * Load order tries the smallest working weights first. The default auto-pick
+ * grabs a 4-bit (`MatMulNBits`) variant that ONNX Runtime Web can't load in
+ * Firefox ("Missing required scale"), so we pin the dtype and force WASM
+ * (Firefox has no stable WebGPU anyway).
+ */
+const ATTEMPTS: Array<{ dtype: "q8" | "fp16" | "fp32"; label: string }> = [
+  { dtype: "q8", label: "int8 (~40 MB)" },
+  { dtype: "fp32", label: "full precision (~150 MB)" },
+];
+
+async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
+  let lastErr: unknown;
+  for (const attempt of ATTEMPTS) {
+    try {
+      return (await pipeline("automatic-speech-recognition", MODEL_ID, {
+        dtype: { encoder_model: attempt.dtype, decoder_model_merged: attempt.dtype },
+        device: "wasm",
+        progress_callback: (p: unknown) => {
+          const prog = p as { status?: string; progress?: number };
+          if (prog.status === "progress" && typeof prog.progress === "number") {
+            self.postMessage({ type: "progress", pct: Math.round(prog.progress) });
+          } else if (prog.status === "ready") {
+            self.postMessage({ type: "ready" });
+          }
+        },
+      })) as AutomaticSpeechRecognitionPipeline;
+    } catch (err) {
+      lastErr = err;
+      self.postMessage({ type: "progress", pct: 0 });
+    }
   }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
+  if (!transcriberPromise) transcriberPromise = loadPipeline();
   return transcriberPromise;
 }
 

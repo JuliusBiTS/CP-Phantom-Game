@@ -69,11 +69,16 @@ export function useLocalWhisper(onText: (text: string) => void) {
       } else if (d.type === "error") {
         setStatus("error");
         setErrorMsg(d.message ?? "Whisper failed");
+        // Drop the worker so the next click retries from a clean slate.
+        workerRef.current?.terminate();
+        workerRef.current = null;
       }
     };
     w.onerror = (e) => {
       setStatus("error");
       setErrorMsg(e.message || "Whisper worker failed to load");
+      workerRef.current?.terminate();
+      workerRef.current = null;
     };
     workerRef.current = w;
     return w;
@@ -89,7 +94,7 @@ export function useLocalWhisper(onText: (text: string) => void) {
   const startRecording = useCallback(async () => {
     setErrorMsg(null);
     const worker = ensureWorker();
-    if (status === "idle") {
+    if (status === "idle" || status === "error") {
       setStatus("loading-model");
       worker.postMessage({ type: "load" });
     }
