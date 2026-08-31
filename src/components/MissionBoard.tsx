@@ -37,6 +37,9 @@ export function MissionBoard({
 
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [live, setLive] = useState<LiveBox | null>(null);
+  // Link mode: click a window, then another, to draw a red-string connection.
+  const [linkMode, setLinkMode] = useState(false);
+  const [linkFrom, setLinkFrom] = useState<string | null>(null);
   // Mirror of `live` written synchronously in the move handler, so pointer-up can
   // read the final box even before React has flushed the drag renders.
   const liveRef = useRef<LiveBox | null>(null);
@@ -120,6 +123,27 @@ export function MissionBoard({
       b.links = b.links.filter((l) => l.from !== id && l.to !== id);
     });
   }
+  function onWindowPick(id: string) {
+    if (!linkMode) return;
+    if (!linkFrom) {
+      setLinkFrom(id);
+      return;
+    }
+    if (linkFrom !== id) {
+      onPatchBoard((b) => {
+        if (!b.links.some((l) => (l.from === linkFrom && l.to === id) || (l.from === id && l.to === linkFrom))) {
+          b.links.push({ id: `lk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, from: linkFrom, to: id, label: "" });
+        }
+      });
+    }
+    setLinkFrom(null);
+  }
+  function removeLink(id: string) {
+    onPatchBoard((b) => { b.links = b.links.filter((l) => l.id !== id); });
+  }
+  function setLinkLabel(id: string, label: string) {
+    onPatchBoard((b) => { const l = b.links.find((x) => x.id === id); if (l) l.label = label; });
+  }
   function addNote() {
     onPatchBoard((b) => {
       b.windows.push({
@@ -147,6 +171,13 @@ export function MissionBoard({
       </span>
       <span style={{ display: "flex", gap: 6 }}>
         <button onClick={addNote} style={{ padding: "3px 9px", fontSize: 10 }}>+ Note</button>
+        <button
+          onClick={() => { setLinkMode((v) => !v); setLinkFrom(null); }}
+          style={{ padding: "3px 9px", fontSize: 10, borderColor: linkMode ? "var(--red)" : undefined, color: linkMode ? "var(--red-bright)" : undefined }}
+          title="Click two windows to connect them with a red string"
+        >
+          🔗 {linkMode ? (linkFrom ? "pick target…" : "linking") : "Link"}
+        </button>
         <button
           onClick={() => onPatchBoard((b) => { Object.assign(b, packBoard(b, typeof window !== "undefined" ? window.innerWidth : undefined)); })}
           style={{ padding: "3px 9px", fontSize: 10 }}
@@ -186,13 +217,15 @@ export function MissionBoard({
       <div className="board-canvas" key={board.blowUpAt}>
         <div className="board-grid" />
         <div className="board-scan" />
-        <LinkLayer board={board} />
+        <LinkLayer board={board} onRemove={removeLink} onLabel={setLinkLabel} />
         {board.windows.map((w, i) => {
           const box = boxOf(w);
           const dragging = live?.id === w.id;
+          const isLinkSource = linkFrom === w.id;
           return (
             <div
               key={w.id}
+              onClick={linkMode ? () => onWindowPick(w.id) : undefined}
               className={`board-window ${w.pinned ? "pinned" : ""} ${dragging ? "" : "board-in"}`}
               style={{
                 left: box.x,
@@ -200,6 +233,8 @@ export function MissionBoard({
                 width: box.w,
                 zIndex: dragging ? 9999 : w.z,
                 animationDelay: `${Math.min(i * 60, 600)}ms`,
+                cursor: linkMode ? "crosshair" : undefined,
+                outline: isLinkSource ? "2px solid var(--red-bright)" : undefined,
               }}
             >
               <WindowFrame
@@ -210,7 +245,7 @@ export function MissionBoard({
                 patchWin={patchWin}
                 patchState={onPatchState}
                 onClose={() => closeWin(w.id)}
-                onGesture={(mode, e) => startGesture(mode, w, e)}
+                onGesture={linkMode ? () => {} : (mode, e) => startGesture(mode, w, e)}
               />
             </div>
           );
@@ -222,7 +257,15 @@ export function MissionBoard({
 
 // ── link layer ────────────────────────────────────────────────────────────
 
-function LinkLayer({ board }: { board: Board }) {
+function LinkLayer({
+  board,
+  onRemove,
+  onLabel,
+}: {
+  board: Board;
+  onRemove: (id: string) => void;
+  onLabel: (id: string, label: string) => void;
+}) {
   const anchor = (id: string) => {
     const w = board.windows.find((x) => x.id === id);
     if (!w) return null;
@@ -235,14 +278,35 @@ function LinkLayer({ board }: { board: Board }) {
         const b = anchor(l.to);
         if (!a || !b) return null;
         const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
         return (
           <g key={l.id}>
             <path d={`M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`} className="board-link-line" />
-            {l.label && (
-              <text x={mx} y={(a.y + b.y) / 2 - 4} className="board-link-label" textAnchor="middle">
-                {l.label}
-              </text>
-            )}
+            <text
+              x={mx}
+              y={my - 6}
+              className="board-link-label"
+              textAnchor="middle"
+              style={{ pointerEvents: "auto", cursor: "text" }}
+              onClick={() => {
+                const next = window.prompt("Connection label", l.label ?? "");
+                if (next != null) onLabel(l.id, next);
+              }}
+            >
+              {l.label || "— label —"}
+            </text>
+            <circle
+              cx={mx}
+              cy={my + 6}
+              r={6}
+              fill="var(--bg)"
+              stroke="var(--red-bright)"
+              style={{ pointerEvents: "auto", cursor: "pointer" }}
+              onClick={() => onRemove(l.id)}
+            />
+            <text x={mx} y={my + 9} textAnchor="middle" fontSize={9} fill="var(--red-bright)" style={{ pointerEvents: "none" }}>
+              ×
+            </text>
           </g>
         );
       })}
@@ -479,23 +543,8 @@ function WindowBody({
           style={{ width: "100%", height: "100%", minHeight: 90, fontSize: 11, resize: "none", border: "none", background: "transparent" }}
         />
       );
-    case "connections": {
-      const links = state.missionBoard.links;
-      const name = (id: string) => {
-        const win = state.missionBoard.windows.find((x) => x.id === id);
-        return win ? windowTitle(win, state).split("—")[1]?.trim() ?? "?" : "?";
-      };
-      return (
-        <div style={{ fontSize: 11 }}>
-          {links.length === 0 && <div className="muted">No connections mapped yet.</div>}
-          {links.map((l) => (
-            <div key={l.id}>
-              {name(l.from)} <span className="muted">—{l.label ? ` ${l.label} ` : "—"}→</span> {name(l.to)}
-            </div>
-          ))}
-        </div>
-      );
-    }
+    case "connections":
+      return <RelationshipGraph state={state} />;
     case "bible": {
       const b = state.campaignBible;
       if (!b) return <div className="muted">Campaign mode only.</div>;
@@ -515,6 +564,61 @@ function WindowBody({
       );
     }
   }
+}
+
+/** Campaign-wide relationship graph — the board's links, laid out on a circle. */
+function RelationshipGraph({ state }: { state: CampaignState }) {
+  const board = state.missionBoard;
+  const nodeIds = Array.from(new Set(board.links.flatMap((l) => [l.from, l.to]))).filter((id) =>
+    board.windows.some((w) => w.id === id),
+  );
+  const label = (id: string) => {
+    const w = board.windows.find((x) => x.id === id);
+    if (!w) return "?";
+    const t = windowTitle(w, state);
+    return t.includes("—") ? t.split("—")[1].trim() : t;
+  };
+
+  if (nodeIds.length === 0) {
+    return <div className="muted" style={{ fontSize: 11 }}>No connections yet. Use 🔗 Link in the toolbar to draw some.</div>;
+  }
+
+  const R = 46;
+  const cx = 70;
+  const cy = 62;
+  const pos: Record<string, { x: number; y: number }> = {};
+  nodeIds.forEach((id, i) => {
+    const a = (i / nodeIds.length) * Math.PI * 2 - Math.PI / 2;
+    pos[id] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+  });
+
+  return (
+    <svg viewBox="0 0 140 130" width="100%" height="140" style={{ overflow: "visible" }}>
+      {board.links.map((l) => {
+        const a = pos[l.from];
+        const b = pos[l.to];
+        if (!a || !b) return null;
+        return (
+          <g key={l.id}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--red-bright)" strokeWidth={0.7} opacity={0.6} />
+            {l.label && (
+              <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2} fontSize={4} fill="var(--red-bright)" textAnchor="middle">
+                {l.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {nodeIds.map((id) => (
+        <g key={id}>
+          <circle cx={pos[id].x} cy={pos[id].y} r={3} fill="var(--cyan)" />
+          <text x={pos[id].x} y={pos[id].y - 5} fontSize={5} fill="var(--text)" textAnchor="middle">
+            {label(id)}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
 }
 
 function PlayerAnnotation({ w, patchWin }: { w: BWindow; patchWin: (id: string, mut: (w: BWindow) => void) => void }) {
