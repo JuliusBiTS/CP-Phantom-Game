@@ -86,6 +86,20 @@ describe("applyDelta — M4 aftermath", () => {
     expect(s.character.humanity_current).toBe(12);
   });
 
+  it("consequences: add / resolve / escalate; timeline beats append", () => {
+    let s = applyDelta(base(), { consequences: { add: [{ text: "Killed a Tyger Claw with witnesses", severity: "major", kind: "enemy" }] } });
+    expect(s.consequences).toHaveLength(1);
+    const id = s.consequences[0].id;
+    s = applyDelta(s, { consequences: { escalateId: id } });
+    expect(s.consequences[0].severity).toBe("grave");
+    s = applyDelta(s, { consequences: { resolveId: id, resolveNote: "settled with the Claws" } });
+    expect(s.consequences[0].status).toBe("resolved");
+    expect(s.consequences[0].resolvedNote).toBe("settled with the Claws");
+
+    s = applyDelta(s, { timelineBeat: "Took the Diaz gig." });
+    expect(s.timeline.map((b) => b.text)).toEqual(["Took the Diaz gig."]);
+  });
+
   it("economy: eddie changes clamp at 0; rent auto-deducts every 30 days", () => {
     let s = base();
     s.character.eurodollar = 100;

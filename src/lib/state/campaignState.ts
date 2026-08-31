@@ -211,6 +211,29 @@ export const MissionBoard = z.object({
 });
 export type MissionBoard = z.infer<typeof MissionBoard>;
 
+/** A loaded gun — something the PC did that will have a later cost. FEATURE_PLAN §M5.
+ *  Distinct from ambient facts: these are tracked to be brought back. */
+export const Consequence = z.object({
+  id: z.string(),
+  text: z.string(),
+  severity: z.enum(["minor", "major", "grave"]).default("major"),
+  kind: z.enum(["enemy", "debt", "witness", "reputation", "other"]).default("other"),
+  refNpcId: z.string().optional(),
+  refFactionId: z.string().optional(),
+  status: z.enum(["armed", "resolved"]).default("armed"),
+  resolvedNote: z.string().optional(),
+  createdAt: z.number(),
+});
+export type Consequence = z.infer<typeof Consequence>;
+
+/** One chronological beat for the timeline view. */
+export const TimelineBeat = z.object({
+  ts: z.number(),
+  inGameDate: z.string().default(""),
+  text: z.string(),
+});
+export type TimelineBeat = z.infer<typeof TimelineBeat>;
+
 export const CampaignBible = z.object({
   antagonist: z.string(),
   drivingConflict: z.string(),
@@ -312,6 +335,8 @@ export const CampaignState = z.object({
   combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null }),
   mode: Mode.default("exploration"),
   downtime: Downtime.default({ daysElapsed: 0 }),
+  consequences: z.array(Consequence).default([]),
+  timeline: z.array(TimelineBeat).default([]),
   sessionLog: z.array(SessionLogEntry).default([]),
   pendingChangeset: z.array(PendingChange).default([]),
   /** Set while a turn is suspended waiting for the player's physical roll. */
@@ -376,6 +401,8 @@ export function newCampaignState(args: {
     combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null },
     mode: "exploration",
     downtime: { daysElapsed: 0 },
+    consequences: [],
+    timeline: [],
     sessionLog: [],
     pendingChangeset: [],
     pendingPlayerRoll: null,

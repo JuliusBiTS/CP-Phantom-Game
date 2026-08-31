@@ -172,6 +172,29 @@ export const TurnDelta = z.object({
    *  current Humanity by the impact. */
   installCyberware: z.object({ name: z.string(), humanityLoss: z.number().optional() }).optional(),
 
+  /** Consequences ledger — FEATURE_PLAN §M5. Record a loaded gun; bring it back later. */
+  consequences: z
+    .object({
+      add: z
+        .array(
+          z.object({
+            text: z.string(),
+            severity: z.enum(["minor", "major", "grave"]).optional(),
+            kind: z.enum(["enemy", "debt", "witness", "reputation", "other"]).optional(),
+            refNpcId: z.string().optional(),
+            refFactionId: z.string().optional(),
+          }),
+        )
+        .optional(),
+      resolveId: z.string().optional(),
+      resolveNote: z.string().optional(),
+      escalateId: z.string().optional(),
+    })
+    .optional(),
+
+  /** One line for the timeline view — "Met Rook. Took the Diaz gig." */
+  timelineBeat: z.string().optional(),
+
   /** Money / lifestyle (house rule — see FEATURE_PLAN §M4). */
   economy: z
     .object({
@@ -390,6 +413,39 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
 
   if (delta.inGameDate) s.meta.inGameDate = delta.inGameDate;
   if (delta.suggestedActions) s.suggestedActions = delta.suggestedActions.slice(0, 4);
+
+  // ── Consequences ledger ────────────────────────────────────────────────
+  if (delta.consequences) {
+    const cq = delta.consequences;
+    for (const a of cq.add ?? []) {
+      s.consequences.push({
+        id: `cq_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        text: a.text,
+        severity: a.severity ?? "major",
+        kind: a.kind ?? "other",
+        refNpcId: a.refNpcId,
+        refFactionId: a.refFactionId,
+        status: "armed",
+        createdAt: Date.now(),
+      });
+    }
+    if (cq.resolveId) {
+      const q = s.consequences.find((x) => x.id === cq.resolveId);
+      if (q) {
+        q.status = "resolved";
+        if (cq.resolveNote) q.resolvedNote = cq.resolveNote;
+      }
+    }
+    if (cq.escalateId) {
+      const q = s.consequences.find((x) => x.id === cq.escalateId);
+      if (q) q.severity = q.severity === "minor" ? "major" : "grave";
+    }
+  }
+
+  // ── Timeline ───────────────────────────────────────────────────────────
+  if (delta.timelineBeat) {
+    s.timeline.push({ ts: Date.now(), inGameDate: s.meta.inGameDate, text: delta.timelineBeat });
+  }
 
   // ── Critical-injury treatment (§13.4) ──────────────────────────────────
   if (delta.pcCriticalInjury) {

@@ -68,6 +68,14 @@ Installing cyberware is a downtime job at a ripperdoc: a Surgery roll (\`request
 
 Gigs pay in eddies; a fixer takes 10–20%. Put payouts, purchases, fees, and fines in \`delta.economy.eddieChange\`. Lifestyle tiers and monthly rent: street 0 · cheap ~500 · decent ~1500 · corpo ~5000 eb/month — set with \`delta.economy.setLifestyle\`. Rent auto-deducts every 30 in-game days; if the PC can't pay, they fall behind (a lead for later). Serious debts: \`delta.economy.addDebt = { to, amount, note }\`.
 
+## Consequences ledger (§M5)
+
+When the PC does something that should have a later cost — kills someone with friends, is recognised on camera, burns a fixer, takes on a serious debt, leaves a witness — record it: \`delta.consequences.add = [{ text, severity: "minor"|"major"|"grave", kind: "enemy"|"debt"|"witness"|"reputation"|"other", refNpcId?, refFactionId? }]\`. These are loaded guns, tracked separately from ambient facts. Reference them, bring them back at dramatic moments, and \`resolveId\` / \`escalateId\` them explicitly when they pay off. The armed ones appear in the state below.
+
+## Timeline
+
+At the end of a turn that meaningfully moved the story — met someone important, took or finished a gig, a big reveal, a death — add one flat line: \`delta.timelineBeat = "Met Rook. Took the Diaz gig."\` Skip it for routine beats.
+
 ## Modes
 
 Most play is free-roaming exploration. When the pace changes, switch the ambient loop in \`commit_turn\`'s delta:
@@ -150,6 +158,9 @@ export function buildStateContext(state: CampaignState): string {
       factions: world.factions,
     },
     activeQuests: activeQuests.map((q) => ({ id: q.id, title: q.title, summary: q.summary, flags: q.flags })),
+    consequences: state.consequences
+      .filter((c) => c.status === "armed")
+      .map((c) => ({ id: c.id, text: c.text, severity: c.severity, kind: c.kind })),
     combat: state.combat?.active
       ? {
           round: state.combat.round,

@@ -492,6 +492,39 @@ export default function Home() {
             <DowntimePanel state={state} busy={busy} onExit={() => sendTurn({ kind: "action", text: "I'm done resting up — I want to get back to work." })} />
           )}
 
+          {state.consequences.some((q) => q.status === "armed") && (
+            <details className="panel panel-accent" style={{ borderColor: "var(--red)", margin: "12px 0" }}>
+              <summary style={{ cursor: "pointer", color: "var(--red-bright)", fontFamily: "var(--font-display)", letterSpacing: "0.05em" }}>
+                Consequences · {state.consequences.filter((q) => q.status === "armed").length} loaded
+              </summary>
+              <div style={{ marginTop: 6 }}>
+                {state.consequences
+                  .filter((q) => q.status === "armed")
+                  .map((q) => (
+                    <div key={q.id} style={{ display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12 }}>
+                      <span
+                        style={{
+                          fontSize: 9,
+                          letterSpacing: "0.1em",
+                          minWidth: 46,
+                          color: q.severity === "grave" ? "var(--red-bright)" : q.severity === "major" ? "var(--gold-bright)" : "var(--text3)",
+                        }}
+                      >
+                        {q.severity.toUpperCase()}
+                      </span>
+                      <span style={{ flex: 1 }}>{q.text}</span>
+                      <button
+                        onClick={() => patchState((s) => { const x = s.consequences.find((c) => c.id === q.id); if (x) x.status = "resolved"; })}
+                        style={{ padding: "1px 7px", fontSize: 10 }}
+                      >
+                        resolved
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </details>
+          )}
+
           <CombatTracker state={state} onPatchCombat={patchCombat} />
 
           {showRecap && state.meta.recap && (

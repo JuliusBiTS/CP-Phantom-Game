@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import type { CampaignState, SessionLogEntry } from "@/lib/state/campaignState";
 
-type Filter = "story" | "rolls" | "all";
+type Filter = "story" | "rolls" | "timeline" | "all";
 
 const TYPE_COLOR: Record<SessionLogEntry["type"], string> = {
   narration: "var(--text)",
@@ -22,7 +22,16 @@ export function TranscriptView({ state, onClose }: { state: CampaignState; onClo
   const [order, setOrder] = useState<"newest" | "oldest">("oldest");
   const [q, setQ] = useState("");
 
+  const timelineRows = useMemo(() => {
+    const beats = state.timeline.map((b, i) => ({
+      l: { ts: b.ts, type: "system" as const, text: `${b.inGameDate ? b.inGameDate + " — " : ""}${b.text}`, compressed: false },
+      i,
+    }));
+    return order === "newest" ? [...beats].reverse() : beats;
+  }, [state.timeline, order]);
+
   const rows = useMemo(() => {
+    if (filter === "timeline") return timelineRows;
     let list = state.sessionLog.filter((l) => {
       if (filter === "story") return l.type === "narration" || l.type === "action";
       if (filter === "rolls") return l.type === "roll";
@@ -34,14 +43,14 @@ export function TranscriptView({ state, onClose }: { state: CampaignState; onClo
     }
     const indexed = list.map((l, i) => ({ l, i }));
     return order === "newest" ? indexed.reverse() : indexed;
-  }, [state.sessionLog, filter, order, q]);
+  }, [state.sessionLog, filter, order, q, timelineRows]);
 
   return (
     <div className="board-shell">
       <div className="board-toolbar">
         <span className="board-title">{"// TRANSCRIPT"}</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {(["story", "rolls", "all"] as Filter[]).map((f) => (
+          {(["story", "rolls", "timeline", "all"] as Filter[]).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
