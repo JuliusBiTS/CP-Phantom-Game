@@ -455,3 +455,201 @@ code {
     animation: none !important;
   }
 }
+
+/* ── Mission Board ── SOLO_MODE_BUILD_PLAN.md §13. The cyberpunk case wall. */
+.board-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.board-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border2);
+  background: var(--surface);
+}
+.board-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--cyan);
+  text-shadow: 0 0 16px var(--cyan-glow);
+  font-size: 13px;
+}
+.board-canvas {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.board-canvas > * {
+  min-width: 1400px;
+  min-height: 1000px;
+}
+.board-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(34, 224, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 224, 255, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+.board-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(34, 224, 255, 0.035) 50%, transparent 100%);
+  background-size: 100% 220px;
+  animation: board-scan 6s linear infinite;
+}
+@keyframes board-scan {
+  from { background-position: 0 -220px; }
+  to { background-position: 0 100%; }
+}
+.board-stacked .board-canvas { overflow: auto; }
+.board-stacked .board-canvas > * { min-width: 0; min-height: 0; }
+
+.board-links {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.board-link-line {
+  fill: none;
+  stroke: var(--red-bright);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 4;
+  opacity: 0.55;
+  animation: board-flow 1s linear infinite;
+  filter: drop-shadow(0 0 3px var(--red-glow));
+}
+@keyframes board-flow {
+  to { stroke-dashoffset: -8; }
+}
+.board-link-label {
+  fill: var(--red-bright);
+  font-family: var(--font);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.board-window {
+  position: absolute;
+}
+.board-in {
+  animation: board-pop 0.32s cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+@keyframes board-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-in { animation: none; }
+  .board-scan { animation: none; }
+  .board-link-line { animation: none; }
+}
+
+.board-frame {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  box-shadow: 0 0 20px -8px var(--cyan-glow), inset 0 0 40px -30px var(--cyan);
+}
+.board-frame.is-new {
+  border-color: var(--cyan);
+  box-shadow: 0 0 26px -4px var(--cyan-glow);
+}
+.board-window.pinned .board-frame {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 24px -6px var(--gold-glow);
+}
+.board-bracket {
+  border-color: var(--cyan) !important;
+}
+.board-window.pinned .board-bracket {
+  border-color: var(--gold-bright) !important;
+}
+.board-frame-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--surface3);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.board-frame-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-new {
+  background: var(--cyan);
+  color: var(--bg);
+  font-weight: 800;
+  font-size: 8px;
+  padding: 1px 4px;
+  letter-spacing: 0.1em;
+  animation: board-blink 1s step-end infinite;
+}
+@keyframes board-blink { 50% { opacity: 0.4; } }
+.board-mini {
+  padding: 0 5px;
+  font-size: 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text3);
+}
+.board-frame-body {
+  padding: 8px;
+  overflow: auto;
+  font-family: var(--font);
+}
+.board-gmnote {
+  color: var(--gold-bright);
+  font-size: 11px;
+  border-left: 2px solid var(--gold-bright);
+  padding-left: 6px;
+  margin-bottom: 5px;
+}
+.board-lead {
+  color: var(--gold-bright);
+}
+.board-redacted {
+  background: linear-gradient(90deg, var(--surface3), var(--border));
+  color: var(--surface3);
+  letter-spacing: 2px;
+  user-select: none;
+  font-size: 11px;
+  margin: 1px 0;
+}
+.board-declassified {
+  color: var(--green-bright);
+  font-size: 11px;
+  animation: board-declass 0.6s ease;
+}
+@keyframes board-declass {
+  from { background: var(--green-bright); color: var(--bg); }
+}
+.board-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, var(--cyan-dim) 50%);
+}

@@ -18,6 +18,7 @@ import { VitalsHud } from "@/components/VitalsHud";
 import { CharacterSheet as CharacterSheetPanel } from "@/components/CharacterSheet";
 import { DicePad } from "@/components/DicePad";
 import { QuickActions } from "@/components/QuickActions";
+import { MissionBoard } from "@/components/MissionBoard";
 
 type CharacterSheetType = CharacterSheet;
 
@@ -57,6 +58,7 @@ export default function Home() {
   const [pending, setPending] = useState<PlayerRollPrompt | null>(null);
   const [lastRolls, setLastRolls] = useState<EngineRoll[]>([]);
   const [showSheet, setShowSheet] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
 
   useEffect(() => {
     store.list().then(setCampaigns).catch(() => {});
@@ -64,10 +66,12 @@ export default function Home() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "c" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
-      setShowSheet((v) => !v);
+      const k = e.key.toLowerCase();
+      if (k === "c") setShowSheet((v) => !v);
+      else if (k === "m") setShowBoard((v) => !v);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -95,6 +99,16 @@ export default function Home() {
       if (!prev) return prev;
       const next: CampaignState = structuredClone(prev);
       mut(next.combat);
+      void store.save(next);
+      return next;
+    });
+  }
+
+  function patchState(mut: (s: CampaignState) => void) {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next: CampaignState = structuredClone(prev);
+      mut(next);
       void store.save(next);
       return next;
     });
@@ -253,29 +267,23 @@ export default function Home() {
 
       {showNew && <NewCampaignForm onCreated={onCreated} onError={setError} />}
 
+      {!showNew && state && showBoard && <MissionBoard state={state} onPatchState={patchState} onClose={() => setShowBoard(false)} />}
+
       {!showNew && state && c && (
         <>
           <VitalsHud state={state} onPatch={patchCharacter} onOpenSheet={() => setShowSheet(true)} />
 
+          <div style={{ display: "flex", gap: 8, margin: "0 0 4px" }}>
+            <button onClick={() => setShowBoard(true)} style={{ padding: "3px 10px", fontSize: 10 }}>
+              Mission Board (M)
+              {state.missionBoard.windows.some((w) => w.createdAt > state.missionBoard.lastOpenedAt) && (
+                <span className="board-new" style={{ marginLeft: 6 }}>NEW</span>
+              )}
+            </button>
+          </div>
+
           {showSheet && (
             <CharacterSheetPanel character={c} onPatch={patchCharacter} onClose={() => setShowSheet(false)} />
-          )}
-
-          {state.campaignBible && (
-            <details className="panel" style={{ fontSize: 12 }}>
-              <summary style={{ cursor: "pointer" }}>Campaign bible (GM-only — spoilers)</summary>
-              <div style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "var(--text2)" }}>
-                <b>Antagonist:</b> {state.campaignBible.antagonist}
-                {"\n\n"}
-                <b>Conflict:</b> {state.campaignBible.drivingConflict}
-                {"\n\n"}
-                <b>Acts:</b>
-                {state.campaignBible.acts.map((a, i) => `\n  ${i + 1}. ${a.goal} → ${a.turningPoint}`).join("")}
-                {"\n\n"}
-                <b>Planted twists:</b>
-                {state.campaignBible.plantedTwists.map((t) => `\n  ${t.delivered ? "✓" : "·"} ${t.twist}`).join("")}
-              </div>
-            </details>
           )}
 
           {state.pendingChangeset.some((p) => p.reviewed === "pending") && (
