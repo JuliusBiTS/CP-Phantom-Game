@@ -9,7 +9,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CampaignState, newCampaignState, CharacterSheet, type CampaignBible } from "@/lib/state/campaignState";
 import { getStore } from "@/lib/storage/store";
-import { pwDiceCaps } from "@/lib/dice/rollPW";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
 import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
 import { DictationButton } from "@/components/DictationButton";
@@ -17,6 +16,8 @@ import { LifePathWizard } from "@/components/LifePathWizard";
 import { CombatTracker } from "@/components/CombatTracker";
 import { VitalsHud } from "@/components/VitalsHud";
 import { CharacterSheet as CharacterSheetPanel } from "@/components/CharacterSheet";
+import { DicePad } from "@/components/DicePad";
+import { QuickActions } from "@/components/QuickActions";
 
 type CharacterSheetType = CharacterSheet;
 
@@ -30,6 +31,7 @@ interface PlayerRollPrompt {
   pw: number;
   diceInstruction: string;
   dv: number | null;
+  kind?: "action" | "initiative";
 }
 interface EngineRoll {
   actor: string;
@@ -52,7 +54,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [action, setAction] = useState("");
   const [interim, setInterim] = useState("");
-  const [rollInput, setRollInput] = useState("");
   const [pending, setPending] = useState<PlayerRollPrompt | null>(null);
   const [lastRolls, setLastRolls] = useState<EngineRoll[]>([]);
   const [showSheet, setShowSheet] = useState(false);
@@ -84,6 +85,16 @@ export default function Home() {
       const next: CampaignState = structuredClone(prev);
       mut(next.character);
       next.meta.lastPlayedAt = Date.now();
+      void store.save(next);
+      return next;
+    });
+  }
+
+  function patchCombat(mut: (c: CampaignState["combat"]) => void) {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next: CampaignState = structuredClone(prev);
+      mut(next.combat);
       void store.save(next);
       return next;
     });
@@ -180,27 +191,13 @@ export default function Home() {
     sendTurn({ kind: "action", text });
   }
 
-  function submitRoll() {
+  function submitRoll(total: number, dice: number[]) {
     if (!pending) return;
-    const dice = rollInput.split(/[\s,+]+/).map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n));
-    if (dice.length === 0) {
-      setError("Enter your dice, e.g. '14 12 7'");
-      return;
-    }
-    const caps = pwDiceCaps(pending.pw);
-    let total = 0;
-    dice.forEach((d, i) => {
-      const cap = caps[i] ?? 20;
-      if (i === 0) total += d <= cap ? d : 0;
-      else if (d === 1) total += cap;
-      else if (d === 20) total += 0;
-      else total += d <= cap ? d : 0;
-    });
-    setRollInput("");
     sendTurn({ kind: "playerRoll", total, dice });
   }
 
   const c = state?.character;
+  const combat = state?.combat;
 
   return (
     <main style={{ maxWidth: 940, margin: "0 auto", padding: "28px 20px 80px" }}>
@@ -225,6 +222,7 @@ export default function Home() {
                       pw: s.pendingPlayerRoll.pw,
                       diceInstruction: s.pendingPlayerRoll.diceInstruction,
                       dv: s.pendingPlayerRoll.dv,
+                      kind: s.pendingPlayerRoll.kind,
                     }
                   : null,
               );
@@ -313,7 +311,7 @@ export default function Home() {
             </section>
           )}
 
-          <CombatTracker state={state} />
+          <CombatTracker state={state} onPatchCombat={patchCombat} />
 
           <section style={{ margin: "14px 0" }}>
             <h2>Narration</h2>
@@ -373,10 +371,12 @@ export default function Home() {
             <section className="panel panel-accent reticle">
               <span className="reticle-tr" />
               <span className="reticle-bl" />
-              <h2 style={{ color: "var(--red-bright)" }}>Your roll</h2>
+              <h2 style={{ color: "var(--red-bright)" }}>
+                {pending.kind === "initiative" ? "Roll initiative" : "Your roll"}
+              </h2>
               <p style={{ margin: "4px 0" }}>{pending.prompt}</p>
               <p style={{ margin: "4px 0", fontFamily: "var(--font)" }}>
-                <b>{pending.statPair}</b> · PW <span className="stat-num">{pending.pw}</span> · {pending.diceInstruction}
+                <b>{pending.statPair}</b> · PW <span className="stat-num">{pending.pw}</span>
                 {pending.dv != null && (
                   <>
                     {" · beat DV "}
@@ -384,25 +384,18 @@ export default function Home() {
                   </>
                 )}
               </p>
-              <p className="muted" style={{ fontSize: 11 }}>
-                Roll physical dice, type the faces (e.g. <code>14 12 7</code>).
-              </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  value={rollInput}
-                  onChange={(e) => setRollInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submitRoll()}
-                  placeholder="dice faces"
-                  style={{ width: 200 }}
-                />
-                <button onClick={submitRoll} disabled={busy}>
-                  {busy ? "…" : "Submit roll"}
-                </button>
-              </div>
+              <DicePad key={`${pending.pw}-${pending.prompt}`} pw={pending.pw} dv={pending.dv} busy={busy} onSubmit={submitRoll} />
             </section>
           ) : (
             <section style={{ margin: "14px 0" }}>
-              <h2>What do you do?</h2>
+              <h2>{combat?.active ? `Round ${combat.round} — your turn` : "What do you do?"}</h2>
+              {c && (
+                <QuickActions
+                  combat={combat ?? null}
+                  weapons={(c.weapons as Array<{ name?: string }> | undefined)?.map((w) => w.name ?? "").filter(Boolean) ?? []}
+                  onPick={(text) => setAction((a) => (a ? a.trim() + " " : "") + text)}
+                />
+              )}
               <textarea
                 value={action + (interim ? " " + interim : "")}
                 onChange={(e) => {
