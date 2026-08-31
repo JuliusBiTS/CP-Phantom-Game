@@ -378,6 +378,15 @@ A new chat should ask these, not assume:
 >
 > **Full character-sheet system (added on user request, 2026-08-31):** all CP Phantom catalogs ported verbatim (`src/lib/rules/catalogs.ts` ~90 KB — TALENT/TECHNIQUE/HACK/CYBERWARE/ATTACHMENT/MELEE_MOD/CONSUMABLE, re-sync via `scripts/extract-catalogs.cjs`) + typed accessors (`catalogAccess.ts`). `VitalsHud.tsx` — always-on strip (HP/STA/IP/Humanity bars with ± quick-adjust, location/eddies/quests, live weapon + reaction PW). `CharacterSheet.tsx` — button or `C` hotkey; tabs for Stats (16 stats by tree + cyberware deltas + derived, showing in-play value vs. v12 formula), Loadout (weapons/armor/cyberware + catalog add), Talents / Techniques / Hacks (owned + full catalog "learn" pickers; hack IP shown after talent discounts), Gear & Abilities (inventory add/remove, ability use counters), Bio (notes/journal). `derived.ts` → `fullDerived()`. 74 tests.
 >
+> **Structured combat + full tracking (user request, 2026-08-31 — "no hallucinations in the fights"):**
+> - `state.combat`: active / round / turnIndex / initiative order / per-enemy cover + range-from-PC / pcTargetId. `start_combat` tool → engine rolls NPC initiative, pauses for the PC's roll, resume builds the order.
+> - `lib/rules/statusEffects.ts` — `tickCombatant()` ticks Bleed(2)/Burn(2|4)/Poison(3) + per-round talent regen + −grit HP floor + duration countdown, DETERMINISTICALLY at each round boundary in `applyDelta` (model never narrates DoT numbers). `lib/rules/initiative.ts` — roll + sort (crit-first / hits by total / misses by PW / crit-fail last).
+> - Delta: `npcHpChanges` / `npcStatusEffects` (per-NPC, id-keyed — every combatant's HP tracked like the PC's), `combat.{turnIndex,round,removeCombatantIds,end}`, `pcAmmoSpent` / `pcReload`.
+> - `DicePad` — per-die fields with caps shown, live counted-total + crit/hit-vs-DV readout, speak-the-faces → parse → auto-submit. `QuickActions` — context chips pre-fill the action box. `CombatTracker` — initiative order, round counter, active combatant in the reticle, click-to-target, per-enemy range(m) + cover controls feeding the v12 §7.7/§18 rules. `VitalsHud` — mag cur/max + Reload per weapon.
+> - Hold-to-talk: `DictationButton holdKey="\`"` — hold the backtick to record.
+> - **Also fixed**: the "unexpected tool_use_id" 400 that hit after ~7 messages — fact-compression was orphaning a tool_result; the split now skips leading tool_result messages and `drive()` sanitises the transcript before every API call.
+> 89 tests.
+>
 > **The full user playtest against the live Anthropic API is the only thing left before calling the whole build done.**
 
 Test with the real user between every phase — don't build all three before he's touched anything.
