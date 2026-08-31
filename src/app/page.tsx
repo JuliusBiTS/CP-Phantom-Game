@@ -14,6 +14,7 @@ import { pcPwReference } from "@/lib/rules/live";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
 import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
 import { DictationButton } from "@/components/DictationButton";
+import { LifePathWizard } from "@/components/LifePathWizard";
 
 type TurnResult =
   | { kind: "awaiting-player-roll"; state: CampaignState; prompt: PlayerRollPrompt; narrationSoFar: string }
@@ -481,8 +482,9 @@ function NewCampaignForm({
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"gigs" | "campaign">("gigs");
   const [premise, setPremise] = useState("");
-  const [source, setSource] = useState<"blank" | "paste" | "import">("blank");
+  const [source, setSource] = useState<"blank" | "paste" | "import" | "build">("blank");
   const [pasteJson, setPasteJson] = useState("");
+  const [builtCharacter, setBuiltCharacter] = useState<CharacterSheet | null>(null);
   const [cpChars, setCpChars] = useState<CpPhantomCharacterRef[]>([]);
   const [importId, setImportId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -497,6 +499,10 @@ function NewCampaignForm({
   }, [source, hasFirebase, cpChars.length, onError]);
 
   async function resolveCharacter(): Promise<CharacterSheet> {
+    if (source === "build") {
+      if (!builtCharacter) throw new Error("Finish the life-path wizard first.");
+      return builtCharacter;
+    }
     if (source === "paste") {
       return CharacterSheet.parse(JSON.parse(pasteJson));
     }
@@ -587,6 +593,9 @@ function NewCampaignForm({
           <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: hasFirebase ? "pointer" : "not-allowed", opacity: hasFirebase ? 1 : 0.5 }}>
             <input type="radio" checked={source === "import"} disabled={!hasFirebase} onChange={() => setSource("import")} /> Import from CP Phantom
           </label>
+          <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
+            <input type="radio" checked={source === "build"} onChange={() => setSource("build")} /> Build (life-path)
+          </label>
         </div>
         {source === "paste" && (
           <textarea value={pasteJson} onChange={(e) => setPasteJson(e.target.value)} rows={3} style={{ width: "100%", marginTop: 6 }} placeholder="Paste a CP Phantom character JSON" />
@@ -602,11 +611,21 @@ function NewCampaignForm({
             ))}
           </select>
         )}
+        {source === "build" && builtCharacter && (
+          <div className="ok" style={{ fontSize: 12, marginTop: 6 }}>
+            ✓ Built: {builtCharacter.name} (HP {builtCharacter.hp_max}, IP {builtCharacter.ip_max}) — hit Create campaign.{" "}
+            <button onClick={() => setBuiltCharacter(null)} style={{ padding: "2px 8px" }}>Redo</button>
+          </div>
+        )}
       </div>
 
-      <button onClick={create} disabled={busy}>
-        {busy ? (mode === "campaign" ? "Generating campaign bible…" : "Creating…") : "Create campaign"}
-      </button>
+      {source === "build" && !builtCharacter ? (
+        <LifePathWizard onDone={setBuiltCharacter} onCancel={() => setSource("blank")} />
+      ) : (
+        <button onClick={create} disabled={busy}>
+          {busy ? (mode === "campaign" ? "Generating campaign bible…" : "Creating…") : "Create campaign"}
+        </button>
+      )}
     </section>
   );
 }
