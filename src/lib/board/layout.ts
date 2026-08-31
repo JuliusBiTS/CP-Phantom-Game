@@ -93,6 +93,49 @@ export function autoLayoutBoard(state: CampaignState, focusQuestId?: string | nu
   return board;
 }
 
+const KIND_ORDER: Record<BoardWindow["kind"], number> = {
+  objective: 0,
+  dossier: 1,
+  location: 2,
+  faction: 3,
+  connections: 4,
+  bible: 5,
+  note: 6,
+};
+
+/**
+ * Non-destructive tidy: keep exactly the windows that are on the board, lay them
+ * out in a clean masonry grid (shortest-column-first) so nothing overlaps.
+ * Sort: pinned first, then by kind, then by age. FEATURE_PLAN.md §M5 (pulled early).
+ */
+export function packBoard(board: MissionBoard, viewportWidth?: number): MissionBoard {
+  const out: MissionBoard = structuredClone(board);
+  const PAD = 24;
+  const COL_W = 300;
+  const GAP = 24;
+  // A hidden pane reports innerWidth 0 — fall back to a sane desktop width then.
+  const width = viewportWidth && viewportWidth >= 320 ? viewportWidth : 1200;
+  const cols = Math.max(1, Math.floor((width - PAD * 2 + GAP) / (COL_W + GAP)));
+
+  const ordered = [...out.windows].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    if (KIND_ORDER[a.kind] !== KIND_ORDER[b.kind]) return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
+    return a.createdAt - b.createdAt;
+  });
+
+  const colY = new Array<number>(cols).fill(PAD);
+  out.windows = ordered.map((w) => {
+    let c = 0;
+    for (let k = 1; k < cols; k++) if (colY[k] < colY[c]) c = k;
+    const x = PAD + c * (COL_W + GAP);
+    const y = colY[c];
+    const h = w.collapsed ? 40 : Math.min(Math.max(w.h, 150), 320);
+    colY[c] = y + h + GAP;
+    return { ...w, x, y, w: COL_W, h, z: 1 };
+  });
+  return out;
+}
+
 /**
  * Run after every applyDelta: add a collapsed window for anything the GM just
  * referenced that has no window yet. Never removes windows.

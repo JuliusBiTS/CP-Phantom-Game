@@ -6,7 +6,7 @@
  * Full visual pass (boot sequence, reticle) is still Phase 3.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CampaignState, newCampaignState, CharacterSheet, type CampaignBible, type Tone } from "@/lib/state/campaignState";
 import { getStore } from "@/lib/storage/store";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
@@ -129,15 +129,33 @@ export default function Home() {
     });
   }
 
-  function patchState(mut: (s: CampaignState) => void) {
-    setState((prev) => {
-      if (!prev) return prev;
-      const next: CampaignState = structuredClone(prev);
-      mut(next);
-      void store.save(next);
-      return next;
-    });
-  }
+  const patchState = useCallback(
+    (mut: (s: CampaignState) => void) => {
+      setState((prev) => {
+        if (!prev) return prev;
+        const next: CampaignState = structuredClone(prev);
+        mut(next);
+        void store.save(next);
+        return next;
+      });
+    },
+    [store],
+  );
+
+  /** Board-only patch — clones just `missionBoard`, not the whole (now large,
+   *  history-carrying) state. Keeps drag/resize cheap. */
+  const patchBoard = useCallback(
+    (mut: (b: CampaignState["missionBoard"]) => void) => {
+      setState((prev) => {
+        if (!prev) return prev;
+        const next: CampaignState = { ...prev, missionBoard: structuredClone(prev.missionBoard) };
+        mut(next.missionBoard);
+        void store.save(next);
+        return next;
+      });
+    },
+    [store],
+  );
 
   async function undo() {
     setState((prev) => {
@@ -414,7 +432,9 @@ export default function Home() {
 
       {showNew && <NewCampaignForm onCreated={onCreated} onError={setError} />}
 
-      {!showNew && state && showBoard && <MissionBoard state={state} onPatchState={patchState} onClose={() => setShowBoard(false)} />}
+      {!showNew && state && showBoard && (
+        <MissionBoard state={state} onPatchState={patchState} onPatchBoard={patchBoard} onClose={() => setShowBoard(false)} />
+      )}
 
       {!showNew && state && showTranscript && <TranscriptView state={state} onClose={() => setShowTranscript(false)} />}
 

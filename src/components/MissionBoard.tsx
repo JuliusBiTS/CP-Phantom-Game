@@ -6,28 +6,40 @@
  * it via the turn delta, new intel glows until you've looked. Hotkey `M`.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CampaignState } from "@/lib/state/campaignState";
-import { autoLayoutBoard } from "@/lib/board/layout";
+import { autoLayoutBoard, packBoard } from "@/lib/board/layout";
 
 type Board = CampaignState["missionBoard"];
 type BWindow = Board["windows"][number];
 
 const MOBILE_BP = 760;
 
+type Gesture = { mode: "move" | "resize"; id: string; px: number; py: number; ox: number; oy: number; ow: number; oh: number };
+type LiveBox = { id: string; x: number; y: number; w: number; h: number };
+
 export function MissionBoard({
   state,
   onPatchState,
+  onPatchBoard,
   onClose,
 }: {
   state: CampaignState;
   onPatchState: (mut: (s: CampaignState) => void) => void;
+  /** Board-only patch — clones just `missionBoard`, not the whole (large) state. */
+  onPatchBoard: (mut: (b: Board) => void) => void;
   onClose: () => void;
 }) {
   const board = state.missionBoard;
   const [narrow, setNarrow] = useState(false);
   // Freeze "what counts as new" at mount so the glow persists this whole visit.
   const [seenBefore] = useState(() => board.lastOpenedAt);
+
+  const [gesture, setGesture] = useState<Gesture | null>(null);
+  const [live, setLive] = useState<LiveBox | null>(null);
+  // Mirror of `live` written synchronously in the move handler, so pointer-up can
+  // read the final box even before React has flushed the drag renders.
+  const liveRef = useRef<LiveBox | null>(null);
 
   useEffect(() => {
     // innerWidth can read 0 transiently (hidden pane) — only go stacked on a real small width.
@@ -39,40 +51,86 @@ export function MissionBoard({
 
   // Mark "seen" a beat after open, so NEW intel glows first.
   useEffect(() => {
-    const t = setTimeout(() => onPatchState((s) => { s.missionBoard.lastOpenedAt = Date.now(); }), 2500);
+    const t = setTimeout(() => onPatchBoard((b) => { b.lastOpenedAt = Date.now(); }), 2500);
     return () => clearTimeout(t);
-  }, [onPatchState]);
+  }, [onPatchBoard]);
+
+  // ── drag / resize: track live in local state, commit ONCE on pointer-up ────
+  useEffect(() => {
+    if (!gesture) return;
+    document.body.style.userSelect = "none";
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - gesture.px;
+      const dy = e.clientY - gesture.py;
+      const box: LiveBox =
+        gesture.mode === "move"
+          ? { id: gesture.id, x: Math.max(0, gesture.ox + dx), y: Math.max(0, gesture.oy + dy), w: gesture.ow, h: gesture.oh }
+          : { id: gesture.id, x: gesture.ox, y: gesture.oy, w: Math.max(180, gesture.ow + dx), h: Math.max(90, gesture.oh + dy) };
+      liveRef.current = box;
+      setLive(box);
+    };
+    const onUp = () => {
+      const cur = liveRef.current;
+      if (cur) {
+        onPatchBoard((b) => {
+          const win = b.windows.find((x) => x.id === cur.id);
+          if (win) { win.x = cur.x; win.y = cur.y; win.w = cur.w; win.h = cur.h; }
+        });
+      }
+      liveRef.current = null;
+      setLive(null);
+      setGesture(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [gesture, onPatchBoard]);
+
+  const boxOf = (w: BWindow): { x: number; y: number; w: number; h: number } =>
+    live && live.id === w.id ? { x: live.x, y: live.y, w: live.w, h: live.h } : { x: w.x, y: w.y, w: w.w, h: w.h };
+
+  const startGesture = useCallback(
+    (mode: "move" | "resize", win: BWindow, e: React.PointerEvent) => {
+      e.preventDefault();
+      onPatchBoard((b) => {
+        const maxZ = Math.max(0, ...b.windows.map((x) => x.z));
+        const w = b.windows.find((x) => x.id === win.id);
+        if (w) w.z = maxZ + 1;
+      });
+      setGesture({ mode, id: win.id, px: e.clientX, py: e.clientY, ox: win.x, oy: win.y, ow: win.w, oh: win.h });
+    },
+    [onPatchBoard],
+  );
 
   function patchWin(id: string, mut: (w: BWindow) => void) {
-    onPatchState((s) => {
-      const w = s.missionBoard.windows.find((x) => x.id === id);
+    onPatchBoard((b) => {
+      const w = b.windows.find((x) => x.id === id);
       if (w) mut(w);
     });
   }
-  function bringForward(id: string) {
-    onPatchState((s) => {
-      const maxZ = Math.max(0, ...s.missionBoard.windows.map((w) => w.z));
-      const w = s.missionBoard.windows.find((x) => x.id === id);
-      if (w) w.z = maxZ + 1;
-    });
-  }
   function closeWin(id: string) {
-    onPatchState((s) => {
-      s.missionBoard.windows = s.missionBoard.windows.filter((w) => w.id !== id);
-      s.missionBoard.links = s.missionBoard.links.filter((l) => l.from !== id && l.to !== id);
+    onPatchBoard((b) => {
+      b.windows = b.windows.filter((w) => w.id !== id);
+      b.links = b.links.filter((l) => l.from !== id && l.to !== id);
     });
   }
   function addNote() {
-    onPatchState((s) => {
-      s.missionBoard.windows.push({
+    onPatchBoard((b) => {
+      b.windows.push({
         id: `w_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
         kind: "note",
         refId: null,
-        x: 60 + Math.random() * 40,
-        y: 60 + Math.random() * 40,
+        x: 40,
+        y: 40,
         w: 260,
         h: 180,
-        z: Math.max(1, ...s.missionBoard.windows.map((w) => w.z)) + 1,
+        z: Math.max(1, ...b.windows.map((w) => w.z)) + 1,
         collapsed: false,
         pinned: false,
         noteText: "",
@@ -89,8 +147,15 @@ export function MissionBoard({
       </span>
       <span style={{ display: "flex", gap: 6 }}>
         <button onClick={addNote} style={{ padding: "3px 9px", fontSize: 10 }}>+ Note</button>
+        <button
+          onClick={() => onPatchBoard((b) => { Object.assign(b, packBoard(b, typeof window !== "undefined" ? window.innerWidth : undefined)); })}
+          style={{ padding: "3px 9px", fontSize: 10 }}
+          title="Lay every window out in a clean grid, nothing overlapping"
+        >
+          ⊞ Arrange
+        </button>
         <button onClick={() => onPatchState((s) => { s.missionBoard = autoLayoutBoard(s, s.missionBoard.activeMissionQuestId); })} style={{ padding: "3px 9px", fontSize: 10 }}>
-          {board.windows.length ? "Re-tidy" : "Build board"}
+          {board.windows.length ? "Rebuild" : "Build board"}
         </button>
         <button onClick={onClose} style={{ padding: "3px 9px", fontSize: 10 }}>Close (M)</button>
       </span>
@@ -107,7 +172,7 @@ export function MissionBoard({
             .sort((a, b) => Number(b.pinned) - Number(a.pinned))
             .map((w) => (
               <div key={w.id} className={`board-window ${w.pinned ? "pinned" : ""}`} style={{ position: "static", width: "auto" }}>
-                <WindowFrame w={w} state={state} isNew={w.createdAt > seenBefore} patchWin={patchWin} patchState={onPatchState} onClose={() => closeWin(w.id)} onFocus={() => {}} stacked />
+                <WindowFrame w={w} state={state} isNew={w.createdAt > seenBefore} patchWin={patchWin} patchState={onPatchState} onClose={() => closeWin(w.id)} onGesture={() => {}} stacked />
               </div>
             ))}
         </div>
@@ -122,23 +187,34 @@ export function MissionBoard({
         <div className="board-grid" />
         <div className="board-scan" />
         <LinkLayer board={board} />
-        {board.windows.map((w, i) => (
-          <div
-            key={w.id}
-            className={`board-window ${w.pinned ? "pinned" : ""} board-in`}
-            style={{ left: w.x, top: w.y, width: w.w, zIndex: w.z, animationDelay: `${Math.min(i * 60, 600)}ms` }}
-          >
-            <WindowFrame
-              w={w}
-              state={state}
-              isNew={w.createdAt > seenBefore}
-              patchWin={patchWin}
-              patchState={onPatchState}
-              onClose={() => closeWin(w.id)}
-              onFocus={() => bringForward(w.id)}
-            />
-          </div>
-        ))}
+        {board.windows.map((w, i) => {
+          const box = boxOf(w);
+          const dragging = live?.id === w.id;
+          return (
+            <div
+              key={w.id}
+              className={`board-window ${w.pinned ? "pinned" : ""} ${dragging ? "" : "board-in"}`}
+              style={{
+                left: box.x,
+                top: box.y,
+                width: box.w,
+                zIndex: dragging ? 9999 : w.z,
+                animationDelay: `${Math.min(i * 60, 600)}ms`,
+              }}
+            >
+              <WindowFrame
+                w={w}
+                box={box}
+                state={state}
+                isNew={w.createdAt > seenBefore}
+                patchWin={patchWin}
+                patchState={onPatchState}
+                onClose={() => closeWin(w.id)}
+                onGesture={(mode, e) => startGesture(mode, w, e)}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -178,60 +254,27 @@ function LinkLayer({ board }: { board: Board }) {
 
 function WindowFrame({
   w,
+  box,
   state,
   isNew,
   patchWin,
   patchState,
   onClose,
-  onFocus,
+  onGesture,
   stacked,
 }: {
   w: BWindow;
+  box?: { x: number; y: number; w: number; h: number };
   state: CampaignState;
   isNew: boolean;
   patchWin: (id: string, mut: (w: BWindow) => void) => void;
   patchState: (mut: (s: CampaignState) => void) => void;
   onClose: () => void;
-  onFocus: () => void;
+  onGesture: (mode: "move" | "resize", e: React.PointerEvent) => void;
   stacked?: boolean;
 }) {
-  const dragRef = useRef<{ px: number; py: number; wx: number; wy: number } | null>(null);
-  const resizeRef = useRef<{ px: number; py: number; ww: number; wh: number } | null>(null);
-
-  function onTitlePointerDown(e: React.PointerEvent) {
-    if (stacked) return;
-    onFocus();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { px: e.clientX, py: e.clientY, wx: w.x, wy: w.y };
-  }
-  function onTitlePointerMove(e: React.PointerEvent) {
-    if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.px;
-    const dy = e.clientY - dragRef.current.py;
-    patchWin(w.id, (win) => {
-      win.x = Math.max(0, dragRef.current!.wx + dx);
-      win.y = Math.max(0, dragRef.current!.wy + dy);
-    });
-  }
-  function endDrag(e: React.PointerEvent) {
-    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
-    dragRef.current = null;
-    resizeRef.current = null;
-  }
-  function onResizePointerDown(e: React.PointerEvent) {
-    e.stopPropagation();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    resizeRef.current = { px: e.clientX, py: e.clientY, ww: w.w, wh: w.h };
-  }
-  function onResizePointerMove(e: React.PointerEvent) {
-    if (!resizeRef.current) return;
-    patchWin(w.id, (win) => {
-      win.w = Math.max(180, resizeRef.current!.ww + (e.clientX - resizeRef.current!.px));
-      win.h = Math.max(90, resizeRef.current!.wh + (e.clientY - resizeRef.current!.py));
-    });
-  }
-
   const title = windowTitle(w, state);
+  const h = box?.h ?? w.h;
 
   return (
     <div className={`board-frame ${isNew ? "is-new" : ""}`}>
@@ -239,10 +282,8 @@ function WindowFrame({
       <span className="reticle-bl board-bracket" />
       <div
         className="board-frame-bar"
-        onPointerDown={onTitlePointerDown}
-        onPointerMove={onTitlePointerMove}
-        onPointerUp={endDrag}
-        style={{ cursor: stacked ? "default" : "grab" }}
+        onPointerDown={stacked ? undefined : (e) => onGesture("move", e)}
+        style={{ cursor: stacked ? "default" : "grab", touchAction: "none" }}
       >
         <span className="board-frame-title">
           {isNew && <span className="board-new">NEW</span>} {title}
@@ -258,12 +299,12 @@ function WindowFrame({
         </span>
       </div>
       {!w.collapsed && (
-        <div className="board-frame-body" style={{ maxHeight: stacked ? undefined : w.h }}>
+        <div className="board-frame-body" style={{ maxHeight: stacked ? undefined : h }}>
           <WindowBody w={w} state={state} patchWin={patchWin} patchState={patchState} />
         </div>
       )}
       {!stacked && !w.collapsed && (
-        <div className="board-resize" onPointerDown={onResizePointerDown} onPointerMove={onResizePointerMove} onPointerUp={endDrag} />
+        <div className="board-resize" onPointerDown={(e) => { e.stopPropagation(); onGesture("resize", e); }} style={{ touchAction: "none" }} />
       )}
     </div>
   );

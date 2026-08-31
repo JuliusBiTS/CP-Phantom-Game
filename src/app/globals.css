@@ -487,9 +487,14 @@ code {
   overflow: auto;
   min-height: 0;
 }
-.board-canvas > * {
-  min-width: 1400px;
-  min-height: 1000px;
+/* The full-bleed layers define the scrollable area — NOT the windows, which
+   carry their own inline width/height (the old `> *` rule bloated every window
+   to 1400px, so they all overlapped). */
+.board-canvas > .board-grid,
+.board-canvas > .board-scan,
+.board-canvas > .board-links {
+  min-width: 1600px;
+  min-height: 1200px;
 }
 .board-grid {
   position: absolute;
