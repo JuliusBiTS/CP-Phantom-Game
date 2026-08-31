@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CampaignState, newCampaignState, CharacterSheet } from "@/lib/state/campaignState";
 import { getStore } from "@/lib/storage/store";
 import { pwDiceCaps } from "@/lib/dice/rollPW";
+import { pcPwReference } from "@/lib/rules/live";
 import { DictationButton } from "@/components/DictationButton";
 
 type TurnResult =
@@ -226,6 +227,38 @@ export default function Home() {
                 GM review queue: {state.pendingChangeset.filter((p) => p.reviewed === "pending").length} pending
               </div>
             )}
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer" }}>PC PW reference (spot-check vs CP Phantom)</summary>
+              {(() => {
+                let ref;
+                try {
+                  ref = pcPwReference(c);
+                } catch {
+                  return <div style={{ opacity: 0.6 }}>—</div>;
+                }
+                return (
+                  <div style={{ fontSize: 12, fontFamily: "ui-monospace, monospace", marginTop: 6 }}>
+                    {ref.weapons.map((w) => (
+                      <div key={w.weapon}>
+                        {w.weapon} ({w.statPair}): PW {w.finalPw} · {w.diceInstruction} · WB {w.weaponBonus}
+                        {w.woundMultiplier != null && ` · wound ×${w.woundMultiplier}`}
+                      </div>
+                    ))}
+                    <div>
+                      {ref.reaction.label} ({ref.reaction.statPair}): PW {ref.reaction.finalPw}
+                    </div>
+                    {ref.skills.map((s) => (
+                      <div key={s.label}>
+                        {s.label} ({s.statPair}): PW {s.finalPw}
+                      </div>
+                    ))}
+                    <div>
+                      Armor SP: body {ref.armorSP.body}, head {ref.armorSP.head}
+                    </div>
+                  </div>
+                );
+              })()}
+            </details>
           </section>
 
           <section style={{ margin: "12px 0" }}>

@@ -8,6 +8,7 @@
  */
 
 import type { CampaignState } from "../state/campaignState";
+import { pcPwReference } from "../rules/live";
 
 export const SYSTEM_PROMPT = `You are the game master for a solo session of the homebrew Cyberpunk tabletop ruleset "CP Phantom" (also called Night City Sprawl / Phantom V1). You narrate and adjudicate; the player plays one character.
 
@@ -32,7 +33,11 @@ Do not call \`commit_turn\` in the same step as \`request_player_roll\` — reso
 
 ## Rolls & math
 
-PW (Probewert) determines how many d20s are rolled: one full d20 per complete 20 of PW, plus one capped remainder die. Natural 1 on the first die = crit success; natural 20 on the first die = crit fail. When you request a PC roll, state the PW you're rolling against and the DV; the backend has already computed the PC's PW for standard actions where possible — trust the numbers in the Campaign State's character sheet.
+PW (Probewert) determines how many d20s are rolled: one full d20 per complete 20 of PW, plus one capped remainder die. Natural 1 on the first die = crit success; natural 20 on the first die = crit fail.
+
+**When you call \`request_player_roll\`, take the PW from the \`pcPwReference\` block below** — its \`finalPw\` values already fold in effective stats, always-on talents, Smart-tech, and the wound-state multiplier, exactly as the CP Phantom tool computes them. Do not recompute from raw stats. Then apply situational modifiers on top per the \`note\` in that block (aimed shot −4, cover, distance/autofire halving via the (n+1) divisor, etc.) and pass the resulting PW and the DV. Use \`diceInstruction\` verbatim for what the player physically rolls.
+
+For a \`roll_dice\` call (any non-PC entity), you pass the fully-modified PW yourself based on that entity's cached sheet; the backend rolls it.
 
 ## Campaign bible
 
@@ -80,5 +85,17 @@ export function buildStateContext(state: CampaignState): string {
     campaignBible: campaignBible ?? undefined,
   };
 
-  return `# Campaign State (source of truth)\n\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\``;
+  let pwBlock = "";
+  try {
+    pwBlock = `\n\n# pcPwReference (use these for request_player_roll)\n\n\`\`\`json\n${JSON.stringify(
+      pcPwReference(character),
+      null,
+      2,
+    )}\n\`\`\``;
+  } catch {
+    // A malformed imported sheet shouldn't break the turn — the model can
+    // still infer PWs from the raw stats above.
+  }
+
+  return `# Campaign State (source of truth)\n\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\`${pwBlock}`;
 }
