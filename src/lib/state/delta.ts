@@ -147,6 +147,16 @@ export const TurnDelta = z.object({
   /** 2–3 concrete "you could…" options for the player, from the current fiction.
    *  Replaces the previous set each turn. FEATURE_PLAN.md §M1. */
   suggestedActions: z.array(z.string()).max(4).optional(),
+
+  /** Switch the ambient play loop. FEATURE_PLAN.md §M3. */
+  mode: z
+    .object({
+      enter: z.enum(["exploration", "downtime", "netrun", "chase"]).optional(),
+      exit: z.boolean().optional(),
+    })
+    .optional(),
+  /** Days that passed this beat (downtime). Accrues on downtime.daysElapsed. */
+  advanceDays: z.number().optional(),
 });
 export type TurnDelta = z.infer<typeof TurnDelta>;
 
@@ -356,6 +366,19 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
 
   if (delta.inGameDate) s.meta.inGameDate = delta.inGameDate;
   if (delta.suggestedActions) s.suggestedActions = delta.suggestedActions.slice(0, 4);
+
+  // ── Mode + downtime clock ───────────────────────────────────────────────
+  if (delta.mode?.exit) s.mode = "exploration";
+  if (delta.mode?.enter) s.mode = delta.mode.enter;
+  if (delta.advanceDays && delta.advanceDays > 0) {
+    s.downtime.daysElapsed += delta.advanceDays;
+    s.sessionLog.push({
+      ts: Date.now(),
+      type: "system",
+      text: `${delta.advanceDays} day${delta.advanceDays === 1 ? "" : "s"} pass — ${s.downtime.daysElapsed} elapsed in downtime total.`,
+      compressed: false,
+    });
+  }
 
   // ── Mission Board ────────────────────────────────────────────────────────
   applyBoardDelta(s, delta.missionBoard);

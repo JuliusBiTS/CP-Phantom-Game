@@ -137,6 +137,19 @@ in a firefight should genuinely threaten death; don't pull punches." etc. Also n
 adjudication ("lethality high → crit-fails in combat cost blood").
 **UI.** Sliders in `NewCampaignForm`; editable later from a small `meta` panel.
 
+> **Built 2026-09-01** (125 tests, browser-verified).
+> - **Streaming:** `drive()` uses `anthropic.messages.stream()` + `.finalMessage()`, emits
+>   `TurnEvent` (`text` deltas, resolved `roll`s) through an optional sink. `POST /api/turn/stream`
+>   wraps `runTurn` in an SSE `ReadableStream`; JSON for validation errors. `lib/llm/streamClient.ts`
+>   reassembles frames across chunks; `page.tsx` shows narration live (blinking `.stream-caret`),
+>   streams the roll feed, falls back to `POST /api/turn` on `StreamUnavailable`.
+> - **Recap:** `POST /api/recap` (slim bible-free ctx, 400-token cap). Client caches on
+>   `meta.recap`/`meta.recapForTs`, regenerates only when returning after a >30 min break with
+>   newer narration. Dismissable card. Compression-pass tokens still not metered.
+> - **Tone:** `meta.tone` — 5 dials 0–3 (`grit`/`lethality`/`gore`/`romance`/`wit`), `lib/llm/tone.ts`
+>   maps each level to prose+adjudication guidance, `buildSystemPrompt(state)` appends it to the
+>   cached prefix. `ToneEditor` in the new-campaign form + a header popover (applies next turn).
+
 ---
 
 ## M3 — Sub-mode framework + Downtime  ·  M  ·  builds §1.1
@@ -157,6 +170,16 @@ catalog cost tiers. When the player starts a new gig or a fight breaks out, exit
 **UI.** A `DowntimePanel` replacing the combat tracker: a day counter, a row of errand chips
 (Shop / Ripperdoc / Train / Contact / Lie low / Take a gig), the eddies balance prominent.
 **Rules.** §23.2 price categories, §6.6a-c consumables, §11.1 talent training, §20 medicine.
+
+> **Built 2026-09-01** (125 tests, browser-verified). `state.mode`
+> (`exploration`|`downtime`|`netrun`|`chase`) + `state.downtime.daysElapsed` (lifetime).
+> `lib/llm/modes/` — `ModeDef {promptFragment, contextSlice?}` per mode, `index.ts` composes;
+> netrun/chase are exit-me stubs. `buildSystemPrompt` + `buildStateContext` fold in the active
+> mode. `delta.mode {enter?,exit?}` + `delta.advanceDays` (accrues + logs). `buildStateContext`
+> renamed the campaign-type field to `meta.campaignType` to free up `mode`.
+> UI: `DowntimePanel` (days/eddies/date + "Back to work"), gold `DOWNTIME` header badge + a
+> `COMBAT` badge, `QuickActions` downtime chip set, mode-aware "what do you do?" heading.
+> Downtime treatment flows (heal on rest, buy/install, upkeep) land with **M4**.
 
 ---
 

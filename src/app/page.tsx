@@ -24,6 +24,7 @@ import { popHistory } from "@/lib/state/history";
 import { estimateCostUsd, formatCostUsd } from "@/lib/llm/cost";
 import { runTurnStream, StreamUnavailable } from "@/lib/llm/streamClient";
 import { ToneEditor } from "@/components/ToneEditor";
+import { DowntimePanel } from "@/components/DowntimePanel";
 import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
@@ -357,7 +358,17 @@ export default function Home() {
         <button onClick={() => setShowNew((v) => !v)}>{showNew ? "Cancel" : "+ New campaign"}</button>
         {state && (
           <span className="muted" style={{ fontSize: 11, letterSpacing: "0.15em" }}>
-            MODE: {state.meta.mode.toUpperCase()}
+            {state.meta.mode.toUpperCase()}
+          </span>
+        )}
+        {state && state.mode !== "exploration" && !state.combat.active && (
+          <span style={{ fontSize: 10, letterSpacing: "0.15em", color: "var(--gold-bright)", border: "1px solid var(--gold)", padding: "1px 6px" }}>
+            {state.mode.toUpperCase()}
+          </span>
+        )}
+        {state && state.combat.active && (
+          <span style={{ fontSize: 10, letterSpacing: "0.15em", color: "var(--red-bright)", border: "1px solid var(--red)", padding: "1px 6px" }}>
+            COMBAT
           </span>
         )}
         {state && (
@@ -455,6 +466,10 @@ export default function Home() {
                 </button>
               </div>
             </section>
+          )}
+
+          {state.mode === "downtime" && !combat?.active && (
+            <DowntimePanel state={state} busy={busy} onExit={() => sendTurn({ kind: "action", text: "I'm done resting up — I want to get back to work." })} />
           )}
 
           <CombatTracker state={state} onPatchCombat={patchCombat} />
@@ -560,7 +575,13 @@ export default function Home() {
             </section>
           ) : (
             <section style={{ margin: "14px 0" }}>
-              <h2>{combat?.active ? `Round ${combat.round} — your turn` : "What do you do?"}</h2>
+              <h2>
+                {combat?.active
+                  ? `Round ${combat.round} — your turn`
+                  : state.mode === "downtime"
+                  ? "Downtime — what do you take care of?"
+                  : "What do you do?"}
+              </h2>
               {!combat?.active && state.suggestedActions.length > 0 && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 8px" }}>
                   {state.suggestedActions.map((s, i) => (
@@ -577,6 +598,7 @@ export default function Home() {
               {c && (
                 <QuickActions
                   combat={combat ?? null}
+                  mode={state.mode}
                   weapons={(c.weapons as Array<{ name?: string }> | undefined)?.map((w) => w.name ?? "").filter(Boolean) ?? []}
                   onPick={(text) => setAction((a) => (a ? a.trim() + " " : "") + text)}
                 />

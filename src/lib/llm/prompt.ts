@@ -10,6 +10,7 @@
 import type { CampaignState } from "../state/campaignState";
 import { pcPwReference } from "../rules/live";
 import { toneFragment } from "./tone";
+import { modePromptFragment, modeContextSlice } from "./modes";
 
 export const SYSTEM_PROMPT = `You are the game master for a solo session of the homebrew Cyberpunk tabletop ruleset "CP Phantom" (also called Night City Sprawl / Phantom V1). You narrate and adjudicate; the player plays one character.
 
@@ -53,6 +54,13 @@ When a real fight starts: call \`generate_npc\` for every combatant, then \`star
 - Status effects: pass \`{ "type": "bleed"|"burn"|"poison", "name": "...", "rounds": N }\` objects (rounds −1 = until treated) so the backend can tick their damage. A bare string works for non-mechanical effects.
 - Ammo: when the PC fires, report it in \`delta.pcAmmoSpent\` (\`[{ weapon, rounds }]\` — a single shot is 1, autofire is 2, suppressive fire is 2). When they reload, list the weapon in \`delta.pcReload\`. If a weapon's \`magCurrent\` is 0, they can't fire it until reloaded — say so.
 
+## Modes
+
+Most play is free-roaming exploration. When the pace changes, switch the ambient loop in \`commit_turn\`'s delta:
+- The PC is between jobs and wants to shop / heal / train / line up work → \`delta.mode = { enter: "downtime" }\`. A DOWNTIME section will then appear here with how to run it.
+- Downtime (or any sub-mode) is over → \`delta.mode = { exit: true }\` (back to exploration).
+Combat is separate — start it with \`start_combat\` as usual, from any mode.
+
 ## Ending a turn
 
 When the immediate beat is resolved (and you are not waiting on a player roll), call \`commit_turn\` exactly once with:
@@ -77,7 +85,7 @@ If a campaign bible appears below, it is GM-ONLY. Write toward it. Never reveal 
 /** System prompt + this campaign's tone dials. Stable per campaign → stays in
  *  the cached prefix. */
 export function buildSystemPrompt(state: CampaignState): string {
-  return SYSTEM_PROMPT + toneFragment(state.meta.tone);
+  return SYSTEM_PROMPT + toneFragment(state.meta.tone) + modePromptFragment(state);
 }
 
 function trimSheet(sheet: unknown): unknown {
@@ -103,7 +111,9 @@ export function buildStateContext(state: CampaignState): string {
   const npcsWithFacts = world.npcs.filter((n) => n.notableFacts.length || n.sheet || n.status !== "alive");
 
   const ctx = {
-    meta: { name: meta.name, mode: meta.mode, inGameDate: meta.inGameDate },
+    meta: { name: meta.name, campaignType: meta.mode, inGameDate: meta.inGameDate },
+    mode: state.mode,
+    modeState: modeContextSlice(state),
     pc: trimSheet(character),
     world: {
       currentLocation: world.currentLocation,

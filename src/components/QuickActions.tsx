@@ -6,24 +6,41 @@
  * second ganger again" every round.
  */
 
-import type { Combat } from "@/lib/state/campaignState";
+import type { Combat, Mode } from "@/lib/state/campaignState";
+
+const DOWNTIME_CHIPS: Array<[string, string]> = [
+  ["Shop", "I hit up a fixer / vendor to buy gear — "],
+  ["Ripperdoc", "I go see my ripperdoc — "],
+  ["Sell", "I move some gear I don't need — "],
+  ["Train", "I spend the time training toward "],
+  ["Chase a lead", "I put the word out on the street and chase a lead about "],
+  ["See a contact", "I check in with "],
+  ["Lie low", "I keep my head down and let the heat cool for a few days."],
+  ["Take a gig", "I tell my fixer I'm ready for the next job."],
+  ["End downtime", "I'm done resting up — back to work."],
+];
 
 export function QuickActions({
   combat,
+  mode = "exploration",
   weapons,
   onPick,
 }: {
   combat: Combat | null;
+  mode?: Mode;
   weapons: string[];
   onPick: (text: string) => void;
 }) {
   const inCombat = !!combat?.active;
+  const inDowntime = !inCombat && mode === "downtime";
   const targets = (combat?.order ?? []).filter((o) => !o.isPC);
   const targetName =
     targets.find((t) => t.id === combat?.pcTargetId)?.name ?? targets[0]?.name ?? "the nearest enemy";
   const primary = weapons[0];
 
-  const chips: Array<[string, string]> = inCombat
+  const chips: Array<[string, string]> = inDowntime
+    ? DOWNTIME_CHIPS
+    : inCombat
     ? [
         primary ? [`Attack ▸ ${targetName}`, `I attack ${targetName} with my ${primary}.`] : ["Attack", `I attack ${targetName}.`],
         ["Aimed shot", `I take an aimed shot at ${targetName} (called shot to the head).`],
@@ -49,7 +66,7 @@ export function QuickActions({
         <button
           key={label}
           onClick={() => onPick(text)}
-          style={{ padding: "3px 9px", fontSize: 10, borderColor: inCombat ? "var(--red)" : "var(--border2)" }}
+          style={{ padding: "3px 9px", fontSize: 10, borderColor: inCombat ? "var(--red)" : inDowntime ? "var(--gold)" : "var(--border2)" }}
         >
           {label}
         </button>

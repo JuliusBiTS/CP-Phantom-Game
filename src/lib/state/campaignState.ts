@@ -240,6 +240,18 @@ export const HistoryEntry = z.object({
 });
 export type HistoryEntry = z.infer<typeof HistoryEntry>;
 
+/** Ambient play loop — FEATURE_PLAN.md §1.1 / §M3. `combat.active` is a
+ *  separate layer that visually takes over regardless of `mode`. */
+export const Mode = z.enum(["exploration", "downtime", "netrun", "chase"]);
+export type Mode = z.infer<typeof Mode>;
+
+/** Downtime bookkeeping — FEATURE_PLAN.md §M3. `daysElapsed` is lifetime, used
+ *  later by upkeep / healing / the world clock. */
+export const Downtime = z.object({
+  daysElapsed: z.number().default(0),
+});
+export type Downtime = z.infer<typeof Downtime>;
+
 export const CampaignState = z.object({
   schemaVersion: z.literal(1),
   meta: z.object({
@@ -271,6 +283,8 @@ export const CampaignState = z.object({
   campaignBible: CampaignBible.optional(),
   missionBoard: MissionBoard.default({ windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 }),
   combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null }),
+  mode: Mode.default("exploration"),
+  downtime: Downtime.default({ daysElapsed: 0 }),
   sessionLog: z.array(SessionLogEntry).default([]),
   pendingChangeset: z.array(PendingChange).default([]),
   /** Set while a turn is suspended waiting for the player's physical roll. */
@@ -333,6 +347,8 @@ export function newCampaignState(args: {
     questLog: [],
     missionBoard: { windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 },
     combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null },
+    mode: "exploration",
+    downtime: { daysElapsed: 0 },
     sessionLog: [],
     pendingChangeset: [],
     pendingPlayerRoll: null,
