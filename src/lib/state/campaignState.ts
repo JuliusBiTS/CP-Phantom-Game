@@ -219,6 +219,18 @@ export type Usage = z.infer<typeof Usage>;
 
 const USAGE_ZERO = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0 };
 
+/** Tone dials — FEATURE_PLAN.md §M2. Each 0–3; see lib/llm/tone.ts. */
+export const Tone = z.object({
+  grit: z.number().min(0).max(3).default(2),
+  lethality: z.number().min(0).max(3).default(2),
+  gore: z.number().min(0).max(3).default(1),
+  romance: z.number().min(0).max(3).default(1),
+  wit: z.number().min(0).max(3).default(1),
+});
+export type Tone = z.infer<typeof Tone>;
+
+const TONE_DEFAULT = { grit: 2, lethality: 2, gore: 1, romance: 1, wit: 1 };
+
 /** One undo point — the whole state (minus its own history) before a turn ran.
  *  FEATURE_PLAN.md §1.3. */
 export const HistoryEntry = z.object({
@@ -243,6 +255,10 @@ export const CampaignState = z.object({
     /** Model that actually ran the turns (from SOLO_MODEL) — for cost estimates. */
     model: z.string().default("claude-sonnet-5"),
     usage: Usage.default(USAGE_ZERO),
+    tone: Tone.default(TONE_DEFAULT),
+    /** Cached "Previously on…" cold-open + the narration ts it was built from. */
+    recap: z.string().default(""),
+    recapForTs: z.number().default(0),
   }),
   character: CharacterSheet,
   world: z.object({
@@ -308,6 +324,9 @@ export function newCampaignState(args: {
       importedFromCpPhantomId: args.importedFromCpPhantomId ?? null,
       model: "claude-sonnet-5",
       usage: USAGE_ZERO,
+      tone: TONE_DEFAULT,
+      recap: "",
+      recapForTs: 0,
     },
     character: args.character,
     world: { currentLocation: "", knownLocations: [], npcs: [], factions: [] },

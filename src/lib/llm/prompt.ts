@@ -9,6 +9,7 @@
 
 import type { CampaignState } from "../state/campaignState";
 import { pcPwReference } from "../rules/live";
+import { toneFragment } from "./tone";
 
 export const SYSTEM_PROMPT = `You are the game master for a solo session of the homebrew Cyberpunk tabletop ruleset "CP Phantom" (also called Night City Sprawl / Phantom V1). You narrate and adjudicate; the player plays one character.
 
@@ -72,6 +73,12 @@ For a \`roll_dice\` call (any non-PC entity), you pass the fully-modified PW you
 ## Campaign bible
 
 If a campaign bible appears below, it is GM-ONLY. Write toward it. Never reveal its contents directly — only through in-fiction discovery. Mark a twist delivered in the delta when it lands.`;
+
+/** System prompt + this campaign's tone dials. Stable per campaign → stays in
+ *  the cached prefix. */
+export function buildSystemPrompt(state: CampaignState): string {
+  return SYSTEM_PROMPT + toneFragment(state.meta.tone);
+}
 
 function trimSheet(sheet: unknown): unknown {
   // Keep the mechanically relevant fields; drop UI cruft to save tokens.

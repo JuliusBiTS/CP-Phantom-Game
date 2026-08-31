@@ -17,7 +17,7 @@ import type { CampaignState } from "../state/campaignState";
 import type { TurnDelta } from "../state/delta";
 import { applyDelta } from "../state/delta";
 import { rollPW, meleeOrRangedDamage } from "../dice/rollPW";
-import { SYSTEM_PROMPT, buildStateContext } from "./prompt";
+import { buildSystemPrompt, buildStateContext } from "./prompt";
 import {
   TURN_TOOLS,
   TOOL_NAMES,
@@ -307,7 +307,7 @@ async function drive(
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: [
-        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        { type: "text", text: buildSystemPrompt(state), cache_control: { type: "ephemeral" } },
       ],
       tools: TURN_TOOLS,
       messages,

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { CampaignState, newCampaignState, CharacterSheet, type CampaignBible } from "@/lib/state/campaignState";
+import { CampaignState, newCampaignState, CharacterSheet, type CampaignBible, type Tone } from "@/lib/state/campaignState";
 import { getStore } from "@/lib/storage/store";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
 import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
@@ -23,6 +23,8 @@ import { TranscriptView } from "@/components/TranscriptView";
 import { popHistory } from "@/lib/state/history";
 import { estimateCostUsd, formatCostUsd } from "@/lib/llm/cost";
 import { runTurnStream, StreamUnavailable } from "@/lib/llm/streamClient";
+import { ToneEditor } from "@/components/ToneEditor";
+import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
 
@@ -71,6 +73,8 @@ export default function Home() {
   const [showSheet, setShowSheet] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [showTone, setShowTone] = useState(false);
+  const [showRecap, setShowRecap] = useState(false);
 
   useEffect(() => {
     store.list().then(setCampaigns).catch(() => {});
@@ -145,6 +149,46 @@ export default function Home() {
       void store.save(res.state).then(() => store.list().then(setCampaigns));
       return res.state;
     });
+  }
+
+  /** "Previously on…" — show a cached recap, or generate one when returning after a break. */
+  async function maybeRecap(s: CampaignState) {
+    const lastNarr = [...s.sessionLog].reverse().find((l) => l.type === "narration");
+    if (!lastNarr) {
+      setShowRecap(false);
+      return;
+    }
+    const fresh = s.meta.recap && s.meta.recapForTs === lastNarr.ts;
+    if (fresh) {
+      setShowRecap(true);
+      return;
+    }
+    const backFromBreak = Date.now() - s.meta.lastPlayedAt > 30 * 60 * 1000;
+    if (!backFromBreak) {
+      setShowRecap(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/recap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ state: s }),
+      });
+      const data = (await res.json()) as { recap?: string; error?: string };
+      if (data.recap) {
+        setState((prev) => {
+          const target = prev && prev.meta.id === s.meta.id ? prev : s;
+          const next: CampaignState = structuredClone(target);
+          next.meta.recap = data.recap!;
+          next.meta.recapForTs = lastNarr.ts;
+          void store.save(next);
+          return next;
+        });
+        setShowRecap(true);
+      }
+    } catch {
+      /* recap is a nicety — never block loading on it */
+    }
   }
 
   async function onCreated(s: CampaignState) {
@@ -299,6 +343,7 @@ export default function Home() {
               setShowNew(false);
               setPending(pendingFromState(s));
               setLastRolls([]);
+              void maybeRecap(s);
             }
           }}
         >
@@ -328,6 +373,23 @@ export default function Home() {
             <button onClick={() => setShowTranscript(true)} style={{ padding: "3px 9px", fontSize: 10 }}>
               Transcript (T)
             </button>
+            <span style={{ position: "relative" }}>
+              <button onClick={() => setShowTone((v) => !v)} style={{ padding: "3px 9px", fontSize: 10 }}>
+                Tone
+              </button>
+              {showTone && (
+                <div className="panel" style={{ position: "absolute", right: 0, top: "110%", zIndex: 50, width: 260 }}>
+                  <div className="muted" style={{ fontSize: 9, letterSpacing: "0.15em", marginBottom: 6 }}>
+                    TONE DIALS — applied next turn
+                  </div>
+                  <ToneEditor
+                    tone={state.meta.tone}
+                    compact
+                    onChange={(t) => patchState((s) => { s.meta.tone = t; })}
+                  />
+                </div>
+              )}
+            </span>
             <CostMeter state={state} />
           </span>
         )}
@@ -396,6 +458,23 @@ export default function Home() {
           )}
 
           <CombatTracker state={state} onPatchCombat={patchCombat} />
+
+          {showRecap && state.meta.recap && (
+            <section className="panel panel-accent" style={{ margin: "14px 0", borderColor: "var(--cyan)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <h2 style={{ color: "var(--cyan)" }}>Previously on…</h2>
+                <button
+                  onClick={() => { setShowRecap(false); patchState((s) => { s.meta.recap = ""; }); }}
+                  style={{ padding: "2px 8px", fontSize: 10 }}
+                >
+                  dismiss ✕
+                </button>
+              </div>
+              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.7, fontStyle: "italic", color: "var(--text2)" }}>
+                {state.meta.recap}
+              </div>
+            </section>
+          )}
 
           <section style={{ margin: "14px 0" }}>
             <h2>Narration{busy && <span className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}> · LIVE</span>}</h2>
@@ -604,6 +683,7 @@ function NewCampaignForm({
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"gigs" | "campaign">("gigs");
   const [premise, setPremise] = useState("");
+  const [tone, setTone] = useState<Tone>({ ...DEFAULT_TONE });
   const [source, setSource] = useState<"blank" | "paste" | "import" | "build">("blank");
   const [pasteJson, setPasteJson] = useState("");
   const [builtCharacter, setBuiltCharacter] = useState<CharacterSheet | null>(null);
@@ -666,6 +746,7 @@ function NewCampaignForm({
         importedFromCpPhantomId: source === "import" ? importId : null,
       });
       if (bible) s.campaignBible = bible;
+      s.meta.tone = tone;
       await onCreated(s);
     } catch (e) {
       onError((e as Error).message);
@@ -702,6 +783,16 @@ function NewCampaignForm({
           <textarea value={premise} onChange={(e) => setPremise(e.target.value)} rows={2} style={{ width: "100%", marginTop: 3 }} placeholder="A fixer I trusted sold me out. I want to know who's really pulling the strings." />
         </label>
       )}
+
+      <details style={{ marginBottom: 10 }}>
+        <summary style={{ cursor: "pointer" }}>
+          <span className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}>TONE</span>{" "}
+          <span className="muted" style={{ fontSize: 10 }}>— how the GM pitches the fiction (change anytime)</span>
+        </summary>
+        <div style={{ marginTop: 8 }}>
+          <ToneEditor tone={tone} onChange={setTone} />
+        </div>
+      </details>
 
       <div style={{ marginBottom: 10 }}>
         <span className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}>CHARACTER</span>
