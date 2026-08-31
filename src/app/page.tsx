@@ -417,12 +417,16 @@ export default function Home() {
                   {busy ? "GM is thinking…" : "Act ⏎"}
                 </button>
                 <DictationButton
+                  holdKey="`"
                   onFinalText={(t) => {
                     setAction((a) => (a ? a + " " : "") + t);
                     setInterim("");
                   }}
                   onInterimText={setInterim}
                 />
+                <span className="muted" style={{ fontSize: 10 }}>
+                  or hold <code>`</code> to talk
+                </span>
               </div>
             </section>
           )}

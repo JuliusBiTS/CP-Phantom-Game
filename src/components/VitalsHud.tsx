@@ -112,8 +112,29 @@ export function VitalsHud({
           {pw && (
             <div style={{ marginTop: 6, fontFamily: "var(--font)", fontSize: 11, color: "var(--text2)" }}>
               {pw.weapons.map((w) => (
-                <div key={w.weapon}>
-                  {w.weapon} ({w.statPair}) — PW <span className="stat-num">{w.finalPw}</span> · {w.diceInstruction} · WB {w.weaponBonus}
+                <div key={w.weapon} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span>
+                    {w.weapon} ({w.statPair}) — PW <span className="stat-num">{w.finalPw}</span> · {w.diceInstruction} · WB {w.weaponBonus}
+                  </span>
+                  {w.mag && (
+                    <>
+                      <span className={w.mag.current === 0 ? "danger" : undefined}>
+                        mag <span className="stat-num">{w.mag.current}</span>/{w.mag.max}
+                      </span>
+                      <button
+                        onClick={() =>
+                          onPatch((c) => {
+                            const ws = (c.weapons as Array<{ name?: string; magCurrent?: number }>) ?? [];
+                            const t = ws.find((x) => x.name?.toLowerCase() === w.weapon.toLowerCase());
+                            if (t) t.magCurrent = w.mag!.max;
+                          })
+                        }
+                        style={{ padding: "0 6px", fontSize: 9 }}
+                      >
+                        reload
+                      </button>
+                    </>
+                  )}
                 </div>
               ))}
               <div>

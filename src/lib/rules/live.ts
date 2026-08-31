@@ -120,6 +120,7 @@ export interface LiveWeapon {
   techLevel?: number;
   pwOverride?: [string, string];
   attachments?: Array<{ name?: string }>;
+  magCurrent?: number;
 }
 
 export interface LiveChar extends WoundInput {
@@ -201,6 +202,8 @@ export interface WeaponPw {
   diceInstruction: string;
   weaponBonus: number;
   range?: { effectiveM: number; maxM: number };
+  /** Magazine: current / max (max from the catalog). null = no magazine (melee). */
+  mag: { current: number; max: number } | null;
   situational: string[];
 }
 
@@ -252,6 +255,10 @@ export function computeWeaponPw(c: LiveChar, weaponName: string, weaponOverride?
   if (w?.tech === "tech") situational.push("Tech weapon: charge to pierce armor (GM adjudicates)");
 
   const range = entry?.rangeKey ? { effectiveM: WEAPON_RANGES[entry.rangeKey].effective, maxM: WEAPON_RANGES[entry.rangeKey].max } : undefined;
+  const mag =
+    entry?.mag != null
+      ? { current: typeof (w as { magCurrent?: number })?.magCurrent === "number" ? (w as { magCurrent: number }).magCurrent : entry.mag, max: entry.mag }
+      : null;
 
   return {
     weapon: weaponName,
@@ -267,6 +274,7 @@ export function computeWeaponPw(c: LiveChar, weaponName: string, weaponOverride?
     diceInstruction: diceInstruction(Math.max(1, pw)),
     weaponBonus,
     range,
+    mag,
     situational,
   };
 }

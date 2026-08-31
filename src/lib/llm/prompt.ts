@@ -39,6 +39,7 @@ When a real fight starts: call \`generate_npc\` for every combatant, then \`star
 - NPC HP/status changes go in \`delta.npcHpChanges\` / \`delta.npcStatusEffects\` (by \`world.npcs\` id), exactly like the PC's — every combatant's HP is tracked, never narrated loosely.
 - Stop and \`commit_turn\` when it reaches the PC's turn to act. When no hostiles remain (or the PC flees / it ends), set \`delta.combat.end = true\`.
 - Status effects: pass \`{ "type": "bleed"|"burn"|"poison", "name": "...", "rounds": N }\` objects (rounds −1 = until treated) so the backend can tick their damage. A bare string works for non-mechanical effects.
+- Ammo: when the PC fires, report it in \`delta.pcAmmoSpent\` (\`[{ weapon, rounds }]\` — a single shot is 1, autofire is 2, suppressive fire is 2). When they reload, list the weapon in \`delta.pcReload\`. If a weapon's \`magCurrent\` is 0, they can't fire it until reloaded — say so.
 
 ## Ending a turn
 

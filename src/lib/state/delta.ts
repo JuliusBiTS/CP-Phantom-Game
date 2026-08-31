@@ -10,6 +10,7 @@
 import { z } from "zod";
 import type { CampaignState } from "./campaignState";
 import { applyAutoStatusEffect, tickCombatant, type StatusEffect, type StatusSpec } from "../rules/statusEffects";
+import { matchWeaponName } from "../rules/live";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -101,6 +102,11 @@ export const TurnDelta = z.object({
       }),
     )
     .optional(),
+
+  /** Ammo — tracked, not narrated. Rounds spent this turn per weapon (autofire
+   *  = 2), and weapons reloaded (magazine refills to max). */
+  pcAmmoSpent: z.array(z.object({ weapon: z.string(), rounds: z.number() })).optional(),
+  pcReload: z.array(z.string()).optional(),
 
   inGameDate: z.string().optional(),
 });
@@ -225,6 +231,24 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
           }
         }
       }
+    }
+  }
+
+  // ── Ammo ────────────────────────────────────────────────────────────────
+  if (delta.pcAmmoSpent?.length || delta.pcReload?.length) {
+    const weapons = Array.isArray(c.weapons) ? (c.weapons as Array<{ name?: string; magCurrent?: number }>) : [];
+    const maxMag = (name?: string) => matchWeaponName(name ?? "")?.mag;
+    for (const spent of delta.pcAmmoSpent ?? []) {
+      const w = weapons.find((x) => x.name?.toLowerCase() === spent.weapon.toLowerCase());
+      const max = maxMag(w?.name);
+      if (w && max != null) {
+        w.magCurrent = Math.max(0, (w.magCurrent ?? max) - spent.rounds);
+      }
+    }
+    for (const name of delta.pcReload ?? []) {
+      const w = weapons.find((x) => x.name?.toLowerCase() === name.toLowerCase());
+      const max = maxMag(w?.name);
+      if (w && max != null) w.magCurrent = max;
     }
   }
 

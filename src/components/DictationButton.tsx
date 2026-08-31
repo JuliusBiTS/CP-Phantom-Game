@@ -48,6 +48,38 @@ interface Props {
   onFinalText: (text: string) => void;
   onInterimText?: (text: string) => void;
   lang?: string;
+  /** Global hold-to-talk key (e.g. "`"). Hold to record, release to transcribe. */
+  holdKey?: string;
+}
+
+/** Push-to-talk: hold `key` anywhere (not in an input) to record. */
+function usePushToTalk(key: string | undefined, recording: boolean, start: () => void, stop: () => void) {
+  const ref = useRef({ recording, start, stop });
+  useEffect(() => {
+    ref.current = { recording, start, stop };
+  });
+  useEffect(() => {
+    if (!key) return;
+    const editable = () => {
+      const el = document.activeElement;
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || (el as HTMLElement).isContentEditable);
+    };
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== key || e.repeat || editable() || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      if (!ref.current.recording) ref.current.start();
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key !== key) return;
+      if (ref.current.recording) ref.current.stop();
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, [key]);
 }
 
 export function DictationButton(props: Props) {
@@ -86,14 +118,15 @@ export function DictationButton(props: Props) {
               ? "webspeech"
               : "whisper";
 
-  if (mode === "cloud") return <CloudDictation onFinalText={props.onFinalText} />;
+  if (mode === "cloud") return <CloudDictation onFinalText={props.onFinalText} holdKey={props.holdKey} />;
   if (mode === "webspeech") return <WebSpeechDictation {...props} />;
-  return <WhisperDictation onFinalText={props.onFinalText} />;
+  return <WhisperDictation onFinalText={props.onFinalText} holdKey={props.holdKey} />;
 }
 
-function CloudDictation({ onFinalText }: { onFinalText: (t: string) => void }) {
+function CloudDictation({ onFinalText, holdKey }: { onFinalText: (t: string) => void; holdKey?: string }) {
   const { status, errorMsg, startRecording, stopRecording } = useCloudWhisper(onFinalText);
   const recording = status === "recording";
+  usePushToTalk(holdKey, recording, startRecording, stopRecording);
   const label =
     status === "transcribing" ? "transcribing…" : status === "error" ? errorMsg : status === "recording" ? null : null;
   return (
@@ -109,7 +142,7 @@ function CloudDictation({ onFinalText }: { onFinalText: (t: string) => void }) {
 
 // ── Web Speech API path (Chrome / Edge) ────────────────────────────────────
 
-function WebSpeechDictation({ onFinalText, onInterimText, lang = "en-US" }: Props) {
+function WebSpeechDictation({ onFinalText, onInterimText, lang = "en-US", holdKey }: Props) {
   const [listening, setListening] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
@@ -202,14 +235,25 @@ function WebSpeechDictation({ onFinalText, onInterimText, lang = "en-US" }: Prop
     startRecognition();
   }, [listening, startRecognition]);
 
+  usePushToTalk(
+    holdKey,
+    listening,
+    () => void toggle(),
+    () => {
+      wantRef.current = false;
+      recRef.current?.stop();
+    },
+  );
+
   return <Shell listening={listening} onClick={toggle} statusMsg={statusMsg} />;
 }
 
 // ── Local Whisper path (Firefox / Safari desktop) ─────────────────────────
 
-function WhisperDictation({ onFinalText }: { onFinalText: (t: string) => void }) {
+function WhisperDictation({ onFinalText, holdKey }: { onFinalText: (t: string) => void; holdKey?: string }) {
   const { status, progress, modelLabel, errorMsg, startRecording, stopRecording } = useLocalWhisper(onFinalText);
   const recording = status === "recording";
+  usePushToTalk(holdKey, recording, startRecording, stopRecording);
 
   const label =
     status === "loading-model"
