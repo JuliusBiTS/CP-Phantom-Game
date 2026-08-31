@@ -87,13 +87,37 @@ export async function soloWrite(relative: string, value: unknown): Promise<void>
 }
 
 /**
- * READ-ONLY import of a CP Phantom character — SOLO_MODE_BUILD_PLAN.md §5.4.
- * Path prefix per CP Phantom's `dbPath()`: `campaign/characters/{id}`.
- * There is deliberately no corresponding write helper.
+ * READ-ONLY import from CP Phantom — SOLO_MODE_BUILD_PLAN.md §5.4.
+ * Data path per CP Phantom's `dbPath()`: `campaign/characters/{id}`.
+ * There is deliberately NO write helper for this path anywhere in the codebase.
  */
 export async function readCpPhantomCharacter(characterId: string): Promise<unknown | null> {
   const clean = characterId.replace(/[^A-Za-z0-9_-]/g, "");
   if (!clean) throw new Error("invalid character id");
   const snap = await get(ref(database(), `${CP_PHANTOM_ROOT}/characters/${clean}`));
   return snap.exists() ? snap.val() : null;
+}
+
+export interface CpPhantomCharacterRef {
+  id: string;
+  name: string;
+  isNPC: boolean;
+  isCompanion: boolean;
+  isVehicle: boolean;
+  isDrone: boolean;
+}
+
+/** List CP Phantom characters for the import picker. Read-only snapshot. */
+export async function listCpPhantomCharacters(): Promise<CpPhantomCharacterRef[]> {
+  const snap = await get(ref(database(), `${CP_PHANTOM_ROOT}/characters`));
+  if (!snap.exists()) return [];
+  const all = snap.val() as Record<string, Record<string, unknown>>;
+  return Object.entries(all).map(([id, c]) => ({
+    id,
+    name: String(c.name ?? id),
+    isNPC: Boolean(c.isNPC),
+    isCompanion: Boolean(c.isCompanion),
+    isVehicle: Boolean(c.isVehicle),
+    isDrone: Boolean(c.isDrone),
+  }));
 }
