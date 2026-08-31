@@ -39,8 +39,21 @@ export const RollCriticalInjuryInput = z.object({
 
 export const StartCombatInput = z.object({
   combatants: z
-    .array(z.object({ id: z.string(), name: z.string() }))
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        role: z.enum(["enemy", "ally", "neutral"]).default("enemy").describe("ally = fights alongside the PC (rolls initiative, takes turns you resolve via roll_dice)."),
+        zoneId: z.string().optional().describe("Which zone this combatant starts in (see zones)."),
+        coverMaterial: z.string().optional().describe("If they start behind cover: steel / stone / ballistic-glass / concrete / wood."),
+      }),
+    )
     .describe("Every NON-PC entity entering the fight (must already be generated via generate_npc). The PC is added automatically."),
+  zones: z
+    .array(z.object({ id: z.string(), name: z.string(), note: z.string().optional(), coverMaterial: z.string().optional() }))
+    .optional()
+    .describe("2–5 named areas for theater-of-mind positioning, e.g. [{id:'bar',name:'The bar'},{id:'door',name:'Front door'}]. Optional but recommended for any fight with movement."),
+  pcZoneId: z.string().optional().describe("Which zone the PC starts in."),
 });
 
 /**

@@ -49,6 +49,11 @@ When a real fight starts: call \`generate_npc\` for every combatant, then \`star
 - PC turn → \`request_player_roll\`. Also request a roll whenever the PC gets a *reaction* (an enemy attacks them and they may dodge — Reaction PW from \`pcPwReference\`).
 - Read \`combat.order[].cover\` / \`.rangeFromPcM\` and \`combat.pcTargetId\` from the state — the PLAYER sets these. Apply cover (v12 §18: fully behind cover = can't be targeted directly) and the distance PW-halving (§7.7: beyond effective range = one halving source) from those real values, not guesses.
 - Every turn, in \`commit_turn\`'s \`delta.combat\`: set \`turnIndex\` to the new position, bump \`round\` by 1 when the order wraps past the end (the backend then ticks Bleed/Burn/Poison and per-round regen — you don't narrate DoT damage numbers, the backend applies them), and list \`removeCombatantIds\` for anyone who dropped this turn.
+- **Enemy intent (§M6):** at the top of every round, before anyone acts, set \`delta.combat.intents = [{ combatantId, intent }]\` for each hostile — one short readable tell ("the sniper is lining up on you", "the bruiser charges the bar"). An enemy may deviate if the situation changes — say so.
+- **Zone map (§M6):** frame the space as 2–5 named zones (\`start_combat.zones\`, or \`delta.combat.zones\` to revise), each combatant in a \`zoneId\`. Movement is \`delta.combat.moves = [{ combatantId, toZoneId }]\`. Keep \`rangeFromPcM\` consistent with the zone layout — that's still what drives the §7.7 distance halving.
+- **Cover HP (§18.2):** a combatant behind cover has \`coverMaterial\` + \`coverHp\` (steel 50/25, stone 40/20, ballistic-glass 30/15, concrete 25/10, wood 20/5). Set it with \`start_combat\` or \`delta.combat.setCover = [{ combatantId, material, thickness }]\`. When someone shoots the cover instead of the person, \`delta.combat.coverDamage = [{ combatantId, amount }]\`; at 0 the cover is gone (backend clears it, excess damage lost).
+- **Allies (§M6):** combatants with \`role: "ally"\` fight alongside the PC — they roll initiative and take their own turns, which YOU resolve via \`roll_dice\` (they are not the PC).
+- **Interrupts (§4 / §7.5):** the PC has one **Flink** per fight (\`combat.flinkUsed\`) — a declared reaction that resolves before the triggering action; when they use it, \`request_player_roll\` out of turn and set \`delta.combat.flinkUsed = true\`. **Overwatch** (Feuerbereitschaft): a combatant spends their turn watching — \`delta.combat.overwatch.set = [{ combatantId, trigger, weapon }]\`; before any action that matches a trigger, resolve that reaction shot FIRST (it fires before the trigger). Clear a spent/void watch with \`overwatch.clearIds\`.
 - NPC HP/status changes go in \`delta.npcHpChanges\` / \`delta.npcStatusEffects\` (by \`world.npcs\` id), exactly like the PC's — every combatant's HP is tracked, never narrated loosely.
 - Stop and \`commit_turn\` when it reaches the PC's turn to act. When no hostiles remain (or the PC flees / it ends), set \`delta.combat.end = true\`.
 - Status effects: pass \`{ "type": "bleed"|"burn"|"poison", "name": "...", "rounds": N }\` objects (rounds −1 = until treated) so the backend can tick their damage. A bare string works for non-mechanical effects.
@@ -166,16 +171,24 @@ export function buildStateContext(state: CampaignState): string {
           round: state.combat.round,
           turnIndex: state.combat.turnIndex,
           currentCombatant: state.combat.order[state.combat.turnIndex]?.name,
+          zones: state.combat.zones,
           order: state.combat.order.map((o, i) => ({
             index: i,
             id: o.id,
             name: o.name,
             isPC: o.isPC,
+            role: o.role,
             initiative: o.initiative,
+            zoneId: o.zoneId,
             cover: o.cover,
+            coverMaterial: o.coverMaterial,
+            coverHp: o.coverHp,
             rangeFromPcM: o.rangeFromPcM,
+            intent: o.intent,
           })),
           pcTargetId: state.combat.pcTargetId,
+          overwatch: state.combat.overwatch,
+          flinkUsed: state.combat.flinkUsed,
         }
       : undefined,
   };

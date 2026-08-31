@@ -145,6 +145,8 @@ export const CombatCombatant = z.object({
   id: z.string(), // "PC" for the player, else the world.npcs id
   name: z.string(),
   isPC: z.boolean(),
+  /** FEATURE_PLAN §M6 — allies roll initiative and take turns too. */
+  role: z.enum(["pc", "enemy", "ally", "neutral"]).default("enemy"),
   initiative: z.number(),
   initiativeOutcome: z.string(),
   /** Cover from the direction of incoming fire — v12 §18 (binary: behind or not). */
@@ -153,6 +155,26 @@ export const CombatCombatant = z.object({
   coverHp: z.number().nullable().default(null),
   /** Range in metres from the PC (for the PC's own attacks; NPC↔NPC is GM-narrated). */
   rangeFromPcM: z.number().nullable().default(null),
+  /** Zone this combatant is in (FEATURE_PLAN §M6 zone map). */
+  zoneId: z.string().nullable().default(null),
+  /** GM's committed plan for this combatant this round (§M6 enemy intent). */
+  intent: z.string().optional(),
+});
+
+/** A named area in the theater-of-mind zone map (§M6). */
+export const CombatZone = z.object({
+  id: z.string(),
+  name: z.string(),
+  note: z.string().optional(),
+  coverMaterial: z.string().optional(),
+});
+
+/** An armed overwatch / Feuerbereitschaft (§4 / §7.5). */
+export const Overwatch = z.object({
+  id: z.string(),
+  combatantId: z.string(),
+  trigger: z.string(),
+  weapon: z.string().optional(),
 });
 
 export const Combat = z.object({
@@ -168,6 +190,10 @@ export const Combat = z.object({
     .object({ weapon: z.string(), mode: z.string(), targetId: z.string().nullable() })
     .nullable()
     .default(null),
+  zones: z.array(CombatZone).default([]),
+  overwatch: z.array(Overwatch).default([]),
+  /** The PC's once-per-fight Flink (§4). */
+  flinkUsed: z.boolean().default(false),
 });
 export type Combat = z.infer<typeof Combat>;
 
@@ -336,7 +362,7 @@ export const CampaignState = z.object({
   questLog: z.array(QuestEntry).default([]),
   campaignBible: CampaignBible.optional(),
   missionBoard: MissionBoard.default({ windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 }),
-  combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null }),
+  combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null, zones: [], overwatch: [], flinkUsed: false }),
   mode: Mode.default("exploration"),
   downtime: Downtime.default({ daysElapsed: 0 }),
   consequences: z.array(Consequence).default([]),
@@ -402,7 +428,7 @@ export function newCampaignState(args: {
     world: { currentLocation: "", knownLocations: [], npcs: [], factions: [] },
     questLog: [],
     missionBoard: { windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 },
-    combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null },
+    combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null, zones: [], overwatch: [], flinkUsed: false },
     mode: "exploration",
     downtime: { daysElapsed: 0 },
     consequences: [],

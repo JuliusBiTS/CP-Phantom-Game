@@ -19,18 +19,35 @@ const TYPE_COLOR: Record<CombatantView["type"], string> = {
   Security: "var(--red-bright)",
 };
 
+const ROLE_COLOR: Record<string, string> = {
+  pc: "var(--cyan)",
+  enemy: "var(--red-bright)",
+  ally: "var(--green-bright)",
+  neutral: "var(--text2)",
+};
+
 function Card({
   v,
   active,
   targeted,
   onTarget,
+  role,
+  intent,
+  coverMaterial,
+  coverHp,
+  zoneName,
 }: {
   v: CombatantView;
   active?: boolean;
   targeted?: boolean;
   onTarget?: () => void;
+  role?: string;
+  intent?: string;
+  coverMaterial?: string;
+  coverHp?: number | null;
+  zoneName?: string;
 }) {
-  const color = TYPE_COLOR[v.type];
+  const color = role ? ROLE_COLOR[role] ?? TYPE_COLOR[v.type] : TYPE_COLOR[v.type];
   const woundCut = v.wound ? Math.round((1 - v.wound.pwMult) * 100) : 0;
   return (
     <div
@@ -56,10 +73,28 @@ function Card({
           {targeted && <span style={{ color: "var(--gold-bright)", fontSize: 9 }}> ◎ TARGET</span>}
         </span>
         <span style={{ fontSize: 9, letterSpacing: "0.15em", color }}>
-          {v.type.toUpperCase()}
+          {(role ?? v.type).toUpperCase()}
           {v.generated ? ` · ${v.generated.tier}/${v.generated.archetype}` : ""}
         </span>
       </div>
+
+      {(zoneName || (coverMaterial && coverHp != null)) && (
+        <div style={{ fontSize: 9, letterSpacing: "0.08em", color: "var(--text3)", marginTop: 2 }}>
+          {zoneName && <span>◍ {zoneName}</span>}
+          {zoneName && coverMaterial && "  "}
+          {coverMaterial && coverHp != null && (
+            <span className={coverHp <= 5 ? "danger" : undefined}>
+              ▚ {coverMaterial} cover {coverHp} HP
+            </span>
+          )}
+        </div>
+      )}
+
+      {intent && (
+        <div style={{ fontSize: 10, color: "var(--gold-bright)", marginTop: 3, fontStyle: "italic" }}>
+          ▸ {intent}
+        </div>
+      )}
 
       <div style={{ margin: "6px 0 4px" }}>
         <div style={{ height: 6, background: "var(--surface3)", border: "1px solid var(--border)" }}>
@@ -141,20 +176,58 @@ export function CombatTracker({
         </div>
         <div style={{ fontSize: 11, color: "var(--text2)", marginBottom: 8 }}>
           Order: {combat.order.map((o, i) => (
-            <span key={o.id} style={{ color: i === combat.turnIndex ? "var(--cyan)" : undefined }}>
+            <span key={o.id} style={{ color: i === combat.turnIndex ? "var(--cyan)" : ROLE_COLOR[o.role] === "var(--green-bright)" ? "var(--green-bright)" : undefined }}>
               {i > 0 ? " → " : ""}{o.name}
             </span>
           ))}
         </div>
+
+        {combat.zones.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {combat.zones.map((z) => {
+              const here = combat.order.filter((o) => o.zoneId === z.id);
+              return (
+                <div key={z.id} style={{ border: "1px solid var(--border2)", padding: "4px 8px", fontSize: 10, minWidth: 90 }}>
+                  <div style={{ letterSpacing: "0.08em", color: "var(--text2)" }}>{z.name.toUpperCase()}</div>
+                  {z.coverMaterial && <div className="muted" style={{ fontSize: 9 }}>▚ {z.coverMaterial}</div>}
+                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
+                    {here.map((o) => (
+                      <span key={o.id} title={o.name} style={{ width: 8, height: 8, borderRadius: "50%", background: ROLE_COLOR[o.role] ?? "var(--text3)" }} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {(combat.overwatch.length > 0 || combat.flinkUsed) && (
+          <div style={{ fontSize: 10, color: "var(--text2)", marginBottom: 6 }}>
+            {combat.overwatch.map((o) => {
+              const nm = combat.order.find((x) => x.id === o.combatantId)?.name ?? o.combatantId;
+              return (
+                <span key={o.id} style={{ marginRight: 10 }}>
+                  ⦿ <b>{nm}</b> overwatch — {o.trigger}
+                </span>
+              );
+            })}
+            {combat.flinkUsed && <span className="muted">Flink used this fight</span>}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
           {combat.order.map((o, i) => {
             const v = viewFor(o.id);
             if (!v) return null;
-            const isTargetable = !o.isPC;
+            const isTargetable = !o.isPC && o.role !== "ally";
             return (
               <div key={o.id}>
                 <Card
                   v={v}
+                  role={o.role}
+                  intent={o.intent}
+                  coverMaterial={o.coverMaterial}
+                  coverHp={o.coverHp}
+                  zoneName={combat.zones.find((z) => z.id === o.zoneId)?.name}
                   active={i === combat.turnIndex}
                   targeted={combat.pcTargetId === o.id}
                   onTarget={isTargetable ? () => onPatchCombat((c) => { c.pcTargetId = o.id; }) : undefined}

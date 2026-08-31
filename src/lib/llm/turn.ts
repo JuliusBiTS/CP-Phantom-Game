@@ -29,6 +29,7 @@ import {
 } from "./tools";
 import { rollDice } from "../dice/rollPW";
 import { resolveCritInjury } from "../rules/criticalInjuries";
+import { coverHpFor } from "../rules/cover";
 import { maybeCompress } from "./compress";
 import { addUsage } from "./cost";
 import { pushHistory } from "../state/history";
@@ -368,7 +369,7 @@ function executeStartCombat(state: CampaignState, raw: unknown, toolUseId: strin
     dv: null,
     kind: "initiative",
   };
-  state.pendingInitiative = { npcRolls, combatants: input.combatants };
+  state.pendingInitiative = { npcRolls, combatants: input.combatants, zones: input.zones ?? [], pcZoneId: input.pcZoneId ?? null };
   state.pendingTurnMessages = messages as unknown[];
   state.sessionLog.push({ ts: Date.now(), type: "system", text: `Combat starting — roll initiative (Drive+Reflexes, PW ${pcPw})`, compressed: false });
 
@@ -556,25 +557,40 @@ export async function runTurn(
 
   // ── Combat start: this roll was the PC's initiative — build the order ─────
   if (pending.kind === "initiative" && working.pendingInitiative) {
-    const stash = working.pendingInitiative as { npcRolls: InitiativeEntry[]; combatants: Array<{ id: string; name: string }> };
+    const stash = working.pendingInitiative as {
+      npcRolls: InitiativeEntry[];
+      combatants: Array<{ id: string; name: string; role?: "enemy" | "ally" | "neutral"; zoneId?: string; coverMaterial?: string }>;
+      zones?: Array<{ id: string; name: string; note?: string; coverMaterial?: string }>;
+      pcZoneId?: string | null;
+    };
     const pcEntry = rollInitiativeForFromTyped(working, pending.pw, input.dice, input.total);
     const ordered = buildInitiativeOrder([pcEntry, ...stash.npcRolls]);
+    const spec = (id: string) => stash.combatants.find((c) => c.id === id);
     working.combat = {
       active: true,
       round: 1,
       turnIndex: 0,
-      order: ordered.map((e) => ({
-        id: e.id,
-        name: e.name,
-        isPC: e.isPC,
-        initiative: e.value,
-        initiativeOutcome: e.outcome,
-        cover: "none" as const,
-        coverHp: null,
-        rangeFromPcM: null,
-      })),
-      pcTargetId: stash.combatants[0]?.id ?? null,
+      order: ordered.map((e) => {
+        const cb = spec(e.id);
+        return {
+          id: e.id,
+          name: e.name,
+          isPC: e.isPC,
+          role: e.isPC ? ("pc" as const) : (cb?.role ?? "enemy"),
+          initiative: e.value,
+          initiativeOutcome: e.outcome,
+          cover: cb?.coverMaterial ? ("behind" as const) : ("none" as const),
+          coverMaterial: cb?.coverMaterial,
+          coverHp: cb?.coverMaterial ? coverHpFor(cb.coverMaterial) : null,
+          rangeFromPcM: null,
+          zoneId: e.isPC ? (stash.pcZoneId ?? null) : (cb?.zoneId ?? null),
+        };
+      }),
+      pcTargetId: stash.combatants.find((c) => (c.role ?? "enemy") === "enemy")?.id ?? stash.combatants[0]?.id ?? null,
       lastPcAction: null,
+      zones: (stash.zones ?? []).map((z) => ({ id: z.id, name: z.name, note: z.note, coverMaterial: z.coverMaterial })),
+      overwatch: [],
+      flinkUsed: false,
     };
     working.sessionLog.push({
       ts: Date.now(),
@@ -599,7 +615,7 @@ export async function runTurn(
           {
             type: "tool_result",
             tool_use_id: pending.toolUseId,
-            content: `Combat started. Round 1. Turn order (index → combatant):\n${orderStr}\n\nResolve turns in this order starting from index 0. Use roll_dice for each NPC turn; pause via request_player_roll when it reaches the PC. Keep combat.turnIndex updated in commit_turn's delta, increment combat.round when the order wraps, and set combat.removeCombatantIds for anyone who drops. Call commit_turn when it's the PC's turn to act (or the fight ends — then set combat.end).`,
+            content: `Combat started. Round 1. Turn order (index → combatant):\n${orderStr}\n\nAt the top of THIS round, set combat.intents for every enemy (a short readable tell). Then resolve turns in order from index 0: roll_dice for each enemy AND each ally turn; pause via request_player_roll when it reaches the PC (or the PC gets a reaction). Keep combat.turnIndex updated, increment combat.round when the order wraps (set fresh intents each new round), set combat.removeCombatantIds for anyone who drops. If someone shoots a target's cover, use combat.coverDamage. Call commit_turn when it's the PC's turn to act (or the fight ends — then combat.end).`,
           },
         ],
       },

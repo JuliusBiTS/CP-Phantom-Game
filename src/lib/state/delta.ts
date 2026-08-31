@@ -13,6 +13,7 @@ import { applyAutoStatusEffect, tickCombatant, type StatusEffect, type StatusSpe
 import { matchWeaponName } from "../rules/live";
 import { autoLayoutBoard, syncBoard } from "../board/layout";
 import { critInjuryRow } from "../rules/criticalInjuries";
+import { coverHpFor } from "../rules/cover";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -47,6 +48,23 @@ export const TurnDelta = z.object({
       round: z.number().optional(),
       removeCombatantIds: z.array(z.string()).optional(),
       end: z.boolean().optional(),
+      /** §M6 enemy intent — set at the top of each round. */
+      intents: z.array(z.object({ combatantId: z.string(), intent: z.string() })).optional(),
+      /** §M6 zone map — replace the zone list / move combatants between zones. */
+      zones: z.array(z.object({ id: z.string(), name: z.string(), note: z.string().optional(), coverMaterial: z.string().optional() })).optional(),
+      moves: z.array(z.object({ combatantId: z.string(), toZoneId: z.string() })).optional(),
+      /** §18 cover HP — set a combatant's cover material (hp auto-filled from the
+       *  §18.2 table if omitted) and shoot it down. */
+      setCover: z.array(z.object({ combatantId: z.string(), material: z.string().nullable(), thickness: z.enum(["thick", "thin"]).optional(), hp: z.number().optional() })).optional(),
+      coverDamage: z.array(z.object({ combatantId: z.string(), amount: z.number() })).optional(),
+      /** §4 / §7.5 interrupt economy. */
+      overwatch: z
+        .object({
+          set: z.array(z.object({ combatantId: z.string(), trigger: z.string(), weapon: z.string().optional() })).optional(),
+          clearIds: z.array(z.string()).optional(),
+        })
+        .optional(),
+      flinkUsed: z.boolean().optional(),
     })
     .optional(),
 
@@ -290,22 +308,76 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
   // ── Combat structure + deterministic round tick ──────────────────────────
   if (delta.combat) {
     const combat = s.combat;
-    if (delta.combat.end) {
+    const dc = delta.combat;
+    const cbById = (id: string) => combat.order.find((o) => o.id === id);
+    if (dc.end) {
       combat.active = false;
       combat.order = [];
       combat.pcTargetId = null;
       combat.lastPcAction = null;
+      combat.zones = [];
+      combat.overwatch = [];
+      combat.flinkUsed = false;
     } else {
-      if (delta.combat.removeCombatantIds?.length) {
-        const rm = new Set(delta.combat.removeCombatantIds);
+      // §M6 zone map
+      if (dc.zones) combat.zones = dc.zones.map((z) => ({ id: z.id, name: z.name, note: z.note, coverMaterial: z.coverMaterial }));
+      for (const mv of dc.moves ?? []) {
+        const cb = cbById(mv.combatantId);
+        if (cb) cb.zoneId = mv.toZoneId;
+      }
+      // §M6 enemy intent
+      for (const it of dc.intents ?? []) {
+        const cb = cbById(it.combatantId);
+        if (cb) cb.intent = it.intent;
+      }
+      // §18 cover HP
+      for (const sc of dc.setCover ?? []) {
+        const cb = cbById(sc.combatantId);
+        if (!cb) continue;
+        if (sc.material == null) {
+          cb.coverMaterial = undefined;
+          cb.coverHp = null;
+          cb.cover = "none";
+        } else {
+          cb.coverMaterial = sc.material;
+          cb.coverHp = sc.hp ?? coverHpFor(sc.material, sc.thickness ?? "thick");
+          cb.cover = "behind";
+        }
+      }
+      for (const cd of dc.coverDamage ?? []) {
+        const cb = cbById(cd.combatantId);
+        if (!cb || cb.coverHp == null) continue;
+        cb.coverHp = Math.max(0, cb.coverHp - Math.max(0, cd.amount));
+        if (cb.coverHp === 0) {
+          s.sessionLog.push({ ts: Date.now(), type: "system", text: `${cb.name}'s cover (${cb.coverMaterial}) is shot to pieces.`, compressed: false });
+          cb.coverMaterial = undefined;
+          cb.coverHp = null;
+          cb.cover = "none";
+        }
+      }
+      // §4 / §7.5 interrupt economy
+      if (dc.overwatch?.set) {
+        for (const ow of dc.overwatch.set) {
+          combat.overwatch.push({ id: `ow_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`, combatantId: ow.combatantId, trigger: ow.trigger, weapon: ow.weapon });
+        }
+      }
+      if (dc.overwatch?.clearIds?.length) {
+        const rm = new Set(dc.overwatch.clearIds);
+        combat.overwatch = combat.overwatch.filter((o) => !rm.has(o.id) && !rm.has(o.combatantId));
+      }
+      if (dc.flinkUsed != null) combat.flinkUsed = dc.flinkUsed;
+
+      if (dc.removeCombatantIds?.length) {
+        const rm = new Set(dc.removeCombatantIds);
         combat.order = combat.order.filter((o) => !rm.has(o.id));
+        combat.overwatch = combat.overwatch.filter((o) => !rm.has(o.combatantId));
       }
-      if (delta.combat.turnIndex != null && combat.order.length) {
-        combat.turnIndex = ((delta.combat.turnIndex % combat.order.length) + combat.order.length) % combat.order.length;
+      if (dc.turnIndex != null && combat.order.length) {
+        combat.turnIndex = ((dc.turnIndex % combat.order.length) + combat.order.length) % combat.order.length;
       }
-      if (delta.combat.round != null && delta.combat.round > combat.round) {
-        const roundsPassed = delta.combat.round - combat.round;
-        combat.round = delta.combat.round;
+      if (dc.round != null && dc.round > combat.round) {
+        const roundsPassed = dc.round - combat.round;
+        combat.round = dc.round;
         for (let r = 0; r < roundsPassed; r++) {
           for (const entry of combat.order) {
             const target =

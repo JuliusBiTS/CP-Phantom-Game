@@ -50,6 +50,57 @@ describe("applyDelta — mode + downtime clock", () => {
   });
 });
 
+describe("applyDelta — M6 combat depth", () => {
+  function inCombat(): CampaignState {
+    const s = base();
+    s.combat = {
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      order: [
+        { id: "PC", name: "V", isPC: true, role: "pc", initiative: 15, initiativeOutcome: "hit", cover: "none", coverHp: null, rangeFromPcM: null, zoneId: "bar" },
+        { id: "g1", name: "Ganger", isPC: false, role: "enemy", initiative: 10, initiativeOutcome: "hit", cover: "none", coverHp: null, rangeFromPcM: 8, zoneId: "door" },
+      ],
+      pcTargetId: "g1",
+      lastPcAction: null,
+      zones: [{ id: "bar", name: "The bar" }, { id: "door", name: "Front door" }],
+      overwatch: [],
+      flinkUsed: false,
+    };
+    return s;
+  }
+
+  it("sets enemy intent and moves combatants between zones", () => {
+    let s = inCombat();
+    s = applyDelta(s, { combat: { intents: [{ combatantId: "g1", intent: "charging the bar" }], moves: [{ combatantId: "g1", toZoneId: "bar" }] } });
+    expect(s.combat.order[1].intent).toBe("charging the bar");
+    expect(s.combat.order[1].zoneId).toBe("bar");
+  });
+
+  it("cover HP: set from the §18.2 table, then shoot it down to nothing", () => {
+    let s = inCombat();
+    s = applyDelta(s, { combat: { setCover: [{ combatantId: "g1", material: "wood" }] } });
+    expect(s.combat.order[1].coverHp).toBe(20);
+    expect(s.combat.order[1].cover).toBe("behind");
+    s = applyDelta(s, { combat: { coverDamage: [{ combatantId: "g1", amount: 25 }] } });
+    expect(s.combat.order[1].coverHp).toBeNull();
+    expect(s.combat.order[1].cover).toBe("none");
+    expect(s.sessionLog.some((l) => l.text.includes("shot to pieces"))).toBe(true);
+  });
+
+  it("overwatch: arm and clear; flink flag; end resets it all", () => {
+    let s = inCombat();
+    s = applyDelta(s, { combat: { overwatch: { set: [{ combatantId: "g1", trigger: "anyone breaks cover", weapon: "SMG" }] }, flinkUsed: true } });
+    expect(s.combat.overwatch).toHaveLength(1);
+    expect(s.combat.flinkUsed).toBe(true);
+    s = applyDelta(s, { combat: { overwatch: { clearIds: ["g1"] } } });
+    expect(s.combat.overwatch).toHaveLength(0);
+    s = applyDelta(s, { combat: { end: true } });
+    expect(s.combat.flinkUsed).toBe(false);
+    expect(s.combat.zones).toHaveLength(0);
+  });
+});
+
 describe("applyDelta — M4 aftermath", () => {
   it("advanceDays in downtime is a full rest (HP restored, injuries persist)", () => {
     let s = base();

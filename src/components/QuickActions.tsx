@@ -47,9 +47,12 @@ export function QuickActions({
         ["Autofire", `I open up on autofire${targets.length > 1 ? " across the group" : ` at ${targetName}`}.`],
         ["Reload", "I reload."],
         ["Take cover", "I break for the nearest cover and stay behind it."],
+        ["Shoot the cover", `I put rounds into the cover ${targetName} is hiding behind.`],
         ["Dodge", `I stay light on my feet, ready to dodge incoming fire.`],
         ["Move", "I reposition — "],
         ["Melee", `I close the distance on ${targetName} and go in melee.`],
+        ...(combat && !combat.flinkUsed ? ([["⚡ Flink", `I use my Flink — a snap second action: `]] as Array<[string, string]>) : []),
+        ["Overwatch", "I hold my action on overwatch — I shoot the first enemy that "],
       ]
     : [
         ["Look around", "I take a slow look around, reading the room."],
