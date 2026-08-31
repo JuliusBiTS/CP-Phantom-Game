@@ -25,7 +25,38 @@ export const TOOL_NAMES = {
   roll: "roll_dice",
   playerRoll: "request_player_roll",
   commit: "commit_turn",
+  generateNpc: "generate_npc",
 } as const;
+
+/**
+ * NPC concept fields — the model picks tier + archetype + gear NAMES only, never
+ * numbers. Lifted from CP Phantom's `GEN_SYSTEM` prompt (`index.html`). The
+ * backend runs `generateNpcSheet` → real deterministic stat block.
+ */
+export const GenerateNpcInput = z.object({
+  id: z.string().describe("Stable slug for this NPC, e.g. 'ganger-rook'. Reused as the world.npcs id."),
+  name: z.string(),
+  tier: z.enum(["GRUNT", "THREAT", "BOSS"]).describe("Power level. GRUNT = rank-and-file, THREAT = competent, BOSS = major."),
+  archetype: z
+    .enum(["BRUISER", "GUNNER", "SNIPER", "NETRUNNER", "STEALTH", "SUPPORT", "HEAVY"])
+    .describe(
+      "Combat role. BRUISER=melee tank; GUNNER=ranged generalist; SNIPER=precision long-range; NETRUNNER=hacker; STEALTH=infiltrator/assassin; SUPPORT=medic/social/utility; HEAVY=heavy/special weapons — THREAT/BOSS only, rare.",
+    ),
+  weapons: z
+    .array(z.string())
+    .describe(
+      "1 for GRUNT, 1-2 THREAT, 2-3 BOSS. Names from: Medium/Heavy/Very Heavy Pistol, Malorian Arms 3516, SMG, Heavy SMG, Assault Rifle, Shotgun, Sniper Rifle, Knife, Big Knucks, Mono-Filament Wire, Medium Melee, Rippers, Mantis Blades, Heavy Melee, Kendachi Mono-Three, Ballistic/Riot/Breacher Shield, Grenade Launcher, Rocket Launcher, Flamethrower, Cryo Thrower, Minigun, Anti-Materiel Rifle. First-listed = primary, should fit the archetype.",
+    ),
+  armorName: z
+    .string()
+    .optional()
+    .describe("One of: Leathers, Kevlar Vest, Body Weight Suit, Light/Medium/Heavy Armorjack, MetalGear."),
+  cyberware: z
+    .array(z.string())
+    .optional()
+    .describe("0-3. Reflex Booster / Memory Booster / Cyberarm / Cyberleg / Subdermal Armor etc. affect stats; others are flavor."),
+  role: z.enum(["enemy", "ally", "neutral"]).default("enemy"),
+});
 
 export const RollDiceInput = z.object({
   actor: z.string().describe("Name of the entity making the roll, e.g. 'Ganger #2', 'corp patrol drone'."),
@@ -67,5 +98,11 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     description:
       "End the turn. Provide the narration the player sees and the full structured delta of state changes. Call exactly once, and never in the same step as request_player_roll.",
     input_schema: toInputSchema(CommitTurnInput),
+  },
+  {
+    name: TOOL_NAMES.generateNpc,
+    description:
+      "Generate a real, deterministic stat block for a non-PC before it first needs to roll. You pick ONLY the concept (tier, archetype, gear names) — the backend computes every number (attributes, HP, PW, armor SP). NEVER invent an NPC's stats yourself. The result is cached on world.npcs[id].sheet; reuse those numbers for that NPC's later rolls instead of regenerating.",
+    input_schema: toInputSchema(GenerateNpcInput),
   },
 ];

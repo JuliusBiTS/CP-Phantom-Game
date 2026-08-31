@@ -24,8 +24,10 @@ import {
   RollDiceInput,
   RequestPlayerRollInput,
   CommitTurnInput,
+  GenerateNpcInput,
 } from "./tools";
 import { maybeCompress } from "./compress";
+import { generateNpcSheet } from "../rules/generate";
 
 const MODEL = process.env.SOLO_MODEL || "claude-sonnet-5";
 const MAX_TOKENS = 8000;
@@ -140,6 +142,38 @@ function executeRollDice(state: CampaignState, raw: unknown): { result: string; 
   return { result: resultForModel, roll };
 }
 
+/** Execute generate_npc: deterministic stat block, cached onto world.npcs. */
+function executeGenerateNpc(state: CampaignState, raw: unknown): string {
+  const input = GenerateNpcInput.parse(raw);
+  const { sheet, summary } = generateNpcSheet({
+    id: input.id,
+    name: input.name,
+    tier: input.tier,
+    archetype: input.archetype,
+    weapons: input.weapons,
+    cyberware: input.cyberware,
+    armorName: input.armorName,
+    role: input.role,
+  });
+
+  let npc = state.world.npcs.find((n) => n.id === input.id);
+  if (!npc) {
+    npc = { id: input.id, name: input.name, disposition: input.role === "ally" ? "friendly" : "hostile", status: "alive", notableFacts: [] };
+    state.world.npcs.push(npc);
+  }
+  npc.name = input.name;
+  npc.sheet = sheet;
+
+  state.sessionLog.push({
+    ts: Date.now(),
+    type: "system",
+    text: `Generated ${input.name} — ${summary.tier}/${summary.archetype}, HP ${summary.hp_max}, armor SP ${summary.armorSP}, ${summary.weapons.map((w) => `${w.name} PW ${w.pw}`).join(", ")}`,
+    compressed: false,
+  });
+
+  return JSON.stringify(summary);
+}
+
 function messagesFor(state: CampaignState, freshUser: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
   const prior = (state.transcript ?? []) as Anthropic.MessageParam[];
   return [...prior, ...freshUser];
@@ -184,6 +218,9 @@ async function drive(
       if (tu.name === TOOL_NAMES.roll) {
         const { result, roll } = executeRollDice(state, tu.input);
         rolls.push(roll);
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
+      } else if (tu.name === TOOL_NAMES.generateNpc) {
+        const result = executeGenerateNpc(state, tu.input);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.playerRoll) {
         const p = RequestPlayerRollInput.parse(tu.input);
