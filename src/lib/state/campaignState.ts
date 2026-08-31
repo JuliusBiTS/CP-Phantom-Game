@@ -46,6 +46,33 @@ export const CharacterSheet = z
     status_effects: z.array(z.any()).optional(),
     eurodollar: z.number().optional(),
     notes: z.string().optional(),
+    /** Critical injuries — rulebook §13. Persist between sessions; don't heal on rest. */
+    criticalInjuries: z
+      .array(
+        z.object({
+          id: z.string(),
+          table: z.enum(["body", "head"]),
+          roll: z.number(),
+          name: z.string(),
+          effect: z.string(),
+          fullFix: z.string().default(""),
+          treatment: z.enum(["untreated", "quick-fixed", "healed"]).default("untreated"),
+        }),
+      )
+      .optional(),
+    /** Base Death Save penalty (§14.2), raised permanently by some critical injuries. */
+    deathSavePenalty: z.number().optional(),
+    /** Cyberware install / cyberpsychosis — §21. */
+    lifestyle: z
+      .object({
+        tier: z.enum(["street", "cheap", "decent", "corpo"]).default("cheap"),
+        rentPerMonth: z.number().default(0),
+        paidThroughDay: z.number().default(0),
+      })
+      .optional(),
+    debts: z
+      .array(z.object({ id: z.string(), to: z.string(), amount: z.number(), note: z.string().default(""), dueDay: z.number().optional() }))
+      .optional(),
   })
   .passthrough();
 export type CharacterSheet = z.infer<typeof CharacterSheet>;

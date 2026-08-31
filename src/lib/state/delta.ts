@@ -12,6 +12,7 @@ import type { CampaignState, MissionBoard } from "./campaignState";
 import { applyAutoStatusEffect, tickCombatant, type StatusEffect, type StatusSpec } from "../rules/statusEffects";
 import { matchWeaponName } from "../rules/live";
 import { autoLayoutBoard, syncBoard } from "../board/layout";
+import { critInjuryRow } from "../rules/criticalInjuries";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -157,6 +158,29 @@ export const TurnDelta = z.object({
     .optional(),
   /** Days that passed this beat (downtime). Accrues on downtime.daysElapsed. */
   advanceDays: z.number().optional(),
+
+  /** Critical-injury treatment (§13.4). Injuries are ADDED by the
+   *  roll_critical_injury tool, not here — this only records treatment. */
+  pcCriticalInjury: z
+    .object({
+      treatId: z.string(),
+      to: z.enum(["quick-fixed", "healed"]),
+    })
+    .optional(),
+
+  /** Cyberware installed this beat (§21). Appends to cyberware[] and drops
+   *  current Humanity by the impact. */
+  installCyberware: z.object({ name: z.string(), humanityLoss: z.number().optional() }).optional(),
+
+  /** Money / lifestyle (house rule — see FEATURE_PLAN §M4). */
+  economy: z
+    .object({
+      eddieChange: z.number().optional(),
+      setLifestyle: z.object({ tier: z.enum(["street", "cheap", "decent", "corpo"]).optional(), rentPerMonth: z.number().optional() }).optional(),
+      addDebt: z.object({ to: z.string(), amount: z.number(), note: z.string().optional(), dueDay: z.number().optional() }).optional(),
+      clearDebtId: z.string().optional(),
+    })
+    .optional(),
 });
 export type TurnDelta = z.infer<typeof TurnDelta>;
 
@@ -367,17 +391,84 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
   if (delta.inGameDate) s.meta.inGameDate = delta.inGameDate;
   if (delta.suggestedActions) s.suggestedActions = delta.suggestedActions.slice(0, 4);
 
+  // ── Critical-injury treatment (§13.4) ──────────────────────────────────
+  if (delta.pcCriticalInjury) {
+    const ci = (c.criticalInjuries ?? []).find((x) => x.id === delta.pcCriticalInjury!.treatId);
+    if (ci) {
+      ci.treatment = delta.pcCriticalInjury.to;
+      if (delta.pcCriticalInjury.to === "healed") {
+        // Refund any Death Save penalty this injury added.
+        const row = critInjuryRow(ci.table, ci.roll);
+        if (row.deathSavePenalty) c.deathSavePenalty = Math.max(0, (c.deathSavePenalty ?? 0) - row.deathSavePenalty);
+      }
+      s.sessionLog.push({ ts: Date.now(), type: "system", text: `Critical injury ${ci.name} — ${ci.treatment}.`, compressed: false });
+    }
+  }
+
+  // ── Cyberware install (§21) ─────────────────────────────────────────────
+  if (delta.installCyberware) {
+    c.cyberware = [...(c.cyberware ?? []), delta.installCyberware.name];
+    const loss = delta.installCyberware.humanityLoss ?? 0;
+    if (loss > 0 && c.humanity_current != null) {
+      c.humanity_current = Math.max(0, c.humanity_current - loss);
+    }
+    s.sessionLog.push({
+      ts: Date.now(),
+      type: "system",
+      text: `Installed ${delta.installCyberware.name}${loss ? ` (−${loss} Humanity → ${c.humanity_current})` : ""}.`,
+      compressed: false,
+    });
+  }
+
+  // ── Economy / lifestyle (house rule) ───────────────────────────────────
+  if (delta.economy) {
+    const e = delta.economy;
+    if (e.eddieChange != null) c.eurodollar = Math.max(0, (c.eurodollar ?? 0) + e.eddieChange);
+    if (e.setLifestyle) {
+      const cur = c.lifestyle ?? { tier: "cheap" as const, rentPerMonth: 0, paidThroughDay: s.downtime.daysElapsed };
+      c.lifestyle = {
+        tier: e.setLifestyle.tier ?? cur.tier,
+        rentPerMonth: e.setLifestyle.rentPerMonth ?? cur.rentPerMonth,
+        paidThroughDay: cur.paidThroughDay,
+      };
+    }
+    if (e.addDebt) {
+      c.debts = [...(c.debts ?? []), { id: `d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, to: e.addDebt.to, amount: e.addDebt.amount, note: e.addDebt.note ?? "", dueDay: e.addDebt.dueDay }];
+    }
+    if (e.clearDebtId) c.debts = (c.debts ?? []).filter((d) => d.id !== e.clearDebtId);
+  }
+
   // ── Mode + downtime clock ───────────────────────────────────────────────
   if (delta.mode?.exit) s.mode = "exploration";
   if (delta.mode?.enter) s.mode = delta.mode.enter;
   if (delta.advanceDays && delta.advanceDays > 0) {
     s.downtime.daysElapsed += delta.advanceDays;
-    s.sessionLog.push({
-      ts: Date.now(),
-      type: "system",
-      text: `${delta.advanceDays} day${delta.advanceDays === 1 ? "" : "s"} pass — ${s.downtime.daysElapsed} elapsed in downtime total.`,
-      compressed: false,
-    });
+    const lines = [`${delta.advanceDays} day${delta.advanceDays === 1 ? "" : "s"} pass — day ${s.downtime.daysElapsed}.`];
+
+    // §14.4 natural healing — a safe stretch of downtime is a full rest.
+    if (s.mode === "downtime" && c.hp_max != null && (c.hp_current ?? c.hp_max) < c.hp_max) {
+      c.hp_current = c.hp_max;
+      if (c.stamina_max != null) c.stamina_current = c.stamina_max;
+      lines.push(`Rested up — HP restored to ${c.hp_max}. (Critical injuries persist.)`);
+    }
+
+    // Rent (§M4 house rule): due every 30 days.
+    if (c.lifestyle && c.lifestyle.rentPerMonth > 0) {
+      const due = Math.floor((s.downtime.daysElapsed - c.lifestyle.paidThroughDay) / 30);
+      if (due > 0) {
+        const owed = due * c.lifestyle.rentPerMonth;
+        const paid = Math.min(owed, c.eurodollar ?? 0);
+        c.eurodollar = Math.max(0, (c.eurodollar ?? 0) - paid);
+        c.lifestyle.paidThroughDay += due * 30;
+        lines.push(
+          paid >= owed
+            ? `Rent paid: ${owed} eb (${c.lifestyle.tier}).`
+            : `Rent due ${owed} eb — only ${paid} eb paid. You're behind.`,
+        );
+      }
+    }
+
+    s.sessionLog.push({ ts: Date.now(), type: "system", text: lines.join(" "), compressed: false });
   }
 
   // ── Mission Board ────────────────────────────────────────────────────────

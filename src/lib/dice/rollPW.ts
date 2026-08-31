@@ -61,6 +61,12 @@ function cryptoDie(sides = 20): number {
   return (x % sides) + 1;
 }
 
+/** Roll N dice of `sides` from the CSPRNG. For table rolls (crit injuries = 2d6). */
+export function rollDice(count: number, sides = 6): { dice: number[]; total: number } {
+  const dice = Array.from({ length: Math.max(1, count) }, () => cryptoDie(sides));
+  return { dice, total: dice.reduce((a, b) => a + b, 0) };
+}
+
 /**
  * Cap values for a PW, matching CP Phantom's `rollInitiative`:
  * `full` dice capped at 20, plus one remainder die when PW isn't a multiple of

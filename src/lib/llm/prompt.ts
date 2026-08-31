@@ -54,6 +54,20 @@ When a real fight starts: call \`generate_npc\` for every combatant, then \`star
 - Status effects: pass \`{ "type": "bleed"|"burn"|"poison", "name": "...", "rounds": N }\` objects (rounds −1 = until treated) so the backend can tick their damage. A bare string works for non-mechanical effects.
 - Ammo: when the PC fires, report it in \`delta.pcAmmoSpent\` (\`[{ weapon, rounds }]\` — a single shot is 1, autofire is 2, suppressive fire is 2). When they reload, list the weapon in \`delta.pcReload\`. If a weapon's \`magCurrent\` is 0, they can't fire it until reloaded — say so.
 
+## Critical injuries (§13)
+
+When an attack scores a **crit success** (first die 1) and gets net damage through armour — or when someone is hit while Mortally Wounded — call \`roll_critical_injury\` (\`table\`: "head" only on a called head shot, else "body"). The backend rolls 2d6, records the injury on the target, and returns the row + a **+5 bonus HP damage** figure. Apply that 5 in \`commit_turn\`'s delta (\`pcHpChange\` / \`npcHpChanges\`) and narrate the wound. Injuries persist between sessions and do NOT heal on rest — only Quick Fix (First Aid/Paramedic roll, suspends the effect) or Surgery/Paramedic (permanent). Record treatment via \`delta.pcCriticalInjury = { treatId, to: "quick-fixed" | "healed" }\`. Surgery costs eddies (DV12≈100, DV15≈500, DV17≈1000, DV22≈2000) — put the spend in \`delta.economy.eddieChange\`.
+
+## Humanity & cyberware (§21)
+
+Humanity bands: **12+** stable · **8–11** strained (a sign of dissonance) · **4–7** dissociated (Humanity+Will vs DV 15 in a high-stress scene) · **1–3** critical (DV 20) · **0** collapse. Ordinary firefights cost no Humanity — only extraordinary trauma does (§21.7: severe shock −1 / DV15, catastrophe or anchor's death −2 / DV20, captivity/abuse −3 / DV25; resisting reduces the loss by 1). A "safe night" restores +1.
+
+Installing cyberware is a downtime job at a ripperdoc: a Surgery roll (\`request_player_roll\`), the eddie cost, and a Humanity hit equal to the implant's impact (0 fashionware, 1 standard, 2 invasive, 3 military). On success: \`delta.installCyberware = { name, humanityLoss }\` (the backend appends it and drops current Humanity).
+
+## Economy (house rule)
+
+Gigs pay in eddies; a fixer takes 10–20%. Put payouts, purchases, fees, and fines in \`delta.economy.eddieChange\`. Lifestyle tiers and monthly rent: street 0 · cheap ~500 · decent ~1500 · corpo ~5000 eb/month — set with \`delta.economy.setLifestyle\`. Rent auto-deducts every 30 in-game days; if the PC can't pay, they fall behind (a lead for later). Serious debts: \`delta.economy.addDebt = { to, amount, note }\`.
+
 ## Modes
 
 Most play is free-roaming exploration. When the pace changes, switch the ambient loop in \`commit_turn\`'s delta:
@@ -102,6 +116,7 @@ function trimSheet(sheet: unknown): unknown {
     "stats", "hp_max", "hp_current", "stamina_max", "stamina_current", "ip_max", "ip_current",
     "humanity_max", "humanity_current", "armor_body", "armor_head", "cyberware", "weapons",
     "talents", "techniques", "hacks", "abilities", "inventory", "status_effects", "eurodollar", "notes",
+    "criticalInjuries", "deathSavePenalty", "lifestyle", "debts",
     "_generated", // pre-computed primaryPw / reactionPw for a generated NPC — saves recomputing
   ];
   const out: Record<string, unknown> = {};

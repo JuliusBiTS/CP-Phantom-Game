@@ -46,6 +46,16 @@ export function humanityBase(stats: Record<string, number>, bonus = 0): number {
   return Math.min(30, Math.max(15, 12 + Math.floor((s(stats, "will") + s(stats, "cool")) / 2))) + bonus;
 }
 
+/** §21.4 Humanity bands. */
+export function humanityBand(current: number | undefined): { label: string; note: string; danger: boolean } {
+  const h = current ?? 12;
+  if (h >= 12) return { label: "Stable", note: "no automatic penalties", danger: false };
+  if (h >= 8) return { label: "Strained", note: "a visible sign of dissonance", danger: false };
+  if (h >= 4) return { label: "Dissociated", note: "stability roll (Hum+Will DV15) in high-stress scenes", danger: true };
+  if (h >= 1) return { label: "Critical", note: "stability roll (Hum+Will DV20) on every high-stress trigger", danger: true };
+  return { label: "Collapse", note: "acute cyberpsychotic episode", danger: true };
+}
+
 export interface DerivedStats {
   hp_max: number;
   stamina_max: number;

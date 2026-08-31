@@ -10,6 +10,7 @@ import { useState } from "react";
 import type { CampaignState, CharacterSheet as Sheet } from "@/lib/state/campaignState";
 import { pcPwReference } from "@/lib/rules/live";
 import { getWoundState } from "@/lib/rules/woundState";
+import { humanityBand } from "@/lib/rules/derived";
 
 function Bar({ label, cur, max, colorAt }: { label: string; cur: number; max: number; colorAt?: (pct: number) => string }) {
   const pct = max ? Math.max(0, Math.min(1, cur / max)) : 0;
@@ -90,8 +91,31 @@ export function VitalsHud({
                 <QuickAdj onMinus={() => adj("ip", -1)} onPlus={() => adj("ip", 1)} />
               </div>
             )}
-            {c.humanity_max != null && <Bar label="HUMANITY" cur={c.humanity_current ?? c.humanity_max} max={c.humanity_max} colorAt={() => "var(--purple-bright)"} />}
+            {c.humanity_max != null && (
+              <div>
+                <Bar label="HUMANITY" cur={c.humanity_current ?? c.humanity_max} max={c.humanity_max} colorAt={() => "var(--purple-bright)"} />
+                {(() => {
+                  const b = humanityBand(c.humanity_current ?? c.humanity_max);
+                  return (
+                    <div style={{ fontSize: 9, letterSpacing: "0.1em" }} className={b.danger ? "danger" : "muted"} title={b.note}>
+                      {b.label.toUpperCase()}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
+
+          {Array.isArray(c.criticalInjuries) && c.criticalInjuries.length > 0 && (
+            <div className="danger" style={{ fontSize: 11, margin: "2px 0 4px" }}>
+              ⚠ {c.criticalInjuries.filter((i) => i.treatment !== "healed").length} critical injur
+              {c.criticalInjuries.filter((i) => i.treatment !== "healed").length === 1 ? "y" : "ies"}:{" "}
+              {c.criticalInjuries
+                .filter((i) => i.treatment !== "healed")
+                .map((i) => `${i.name}${i.treatment === "quick-fixed" ? " (patched)" : ""}`)
+                .join(", ") || "all healed"}
+            </div>
+          )}
 
           <div style={{ fontSize: 12 }}>
             <span className="muted">LOCATION</span> {state.world.currentLocation || "—"}

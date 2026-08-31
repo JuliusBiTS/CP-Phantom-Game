@@ -138,7 +138,37 @@ function StatsTab({ c }: { c: Sheet }) {
         <Row k="Capacity (Grit×5)" v={String(d.capacity)} />
         <Row k="Global XP" v={String(c.globalXP ?? 0)} />
         <Row k="Talent points spent" v={String(c.talentPointsSpent ?? 0)} />
+        {(c.deathSavePenalty ?? 0) > 0 && <Row k="Death save penalty (base)" v={`+${c.deathSavePenalty}`} />}
       </div>
+
+      {Array.isArray(c.criticalInjuries) && c.criticalInjuries.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="danger" style={{ fontSize: 10, letterSpacing: "0.2em" }}>CRITICAL INJURIES (§13)</div>
+          {c.criticalInjuries.map((i) => (
+            <div key={i.id} style={{ fontSize: 11, padding: "3px 0", borderBottom: "1px solid var(--border)" }}>
+              <b className={i.treatment === "healed" ? "muted" : "danger"}>{i.name}</b>{" "}
+              <span className="muted">({i.table}, 2d6={i.roll})</span>
+              {" — "}
+              {i.effect}
+              <div className="muted" style={{ fontSize: 10 }}>
+                {i.treatment === "healed" ? "✓ healed" : i.treatment === "quick-fixed" ? "patched (effect suspended until next fight)" : `untreated · permanent fix: ${i.fullFix}`}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {Array.isArray(c.debts) && c.debts.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}>DEBTS</div>
+          {c.debts.map((d2) => (
+            <div key={d2.id} style={{ fontSize: 11 }}>
+              <span className="stat-num">{d2.amount}</span> eb to <b>{d2.to}</b>
+              {d2.note ? ` — ${d2.note}` : ""}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -27,7 +27,15 @@ export const TOOL_NAMES = {
   commit: "commit_turn",
   generateNpc: "generate_npc",
   startCombat: "start_combat",
+  critInjury: "roll_critical_injury",
 } as const;
+
+export const RollCriticalInjuryInput = z.object({
+  who: z.enum(["pc", "npc"]).describe("Whose injury this is."),
+  npcId: z.string().optional().describe("Required when who='npc' — the world.npcs id."),
+  table: z.enum(["body", "head"]).describe("head only on a called head shot (or if narratively apt); body otherwise."),
+  cause: z.string().describe("One line: what caused it, e.g. 'point-blank shotgun crit'."),
+});
 
 export const StartCombatInput = z.object({
   combatants: z
@@ -117,6 +125,12 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     description:
       "Begin structured combat when a fight breaks out. The backend rolls initiative for the NPCs (real dice) and pauses for the PC to roll theirs, then builds the turn order. Call generate_npc for every combatant FIRST. After this, the Campaign State carries combat.active / round / turn order — resolve turns in that order, pause on the PC's turn, and keep combat.turnIndex / combat.round updated in commit_turn's delta.",
     input_schema: toInputSchema(StartCombatInput),
+  },
+  {
+    name: TOOL_NAMES.critInjury,
+    description:
+      "Roll a critical injury (rulebook §13). Trigger: an attack scores a crit success (first die = 1) AND net damage after armour > 0, OR any hit taken while Mortally Wounded. The backend rolls 2d6 on the body/head table, records the injury on the target, and returns the row + the +5 bonus HP damage. You then apply that 5 HP in commit_turn's delta (pcHpChange or npcHpChanges) and narrate the wound — do NOT invent the injury yourself.",
+    input_schema: toInputSchema(RollCriticalInjuryInput),
     // Cache breakpoint: system + all tool schemas are re-sent every model call
     // (several per turn in combat) and never change — cache the whole prefix.
     cache_control: { type: "ephemeral" },

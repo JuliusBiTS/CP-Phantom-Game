@@ -25,7 +25,10 @@ import {
   CommitTurnInput,
   GenerateNpcInput,
   StartCombatInput,
+  RollCriticalInjuryInput,
 } from "./tools";
+import { rollDice } from "../dice/rollPW";
+import { resolveCritInjury } from "../rules/criticalInjuries";
 import { maybeCompress } from "./compress";
 import { addUsage } from "./cost";
 import { pushHistory } from "../state/history";
@@ -181,6 +184,52 @@ function executeRollDice(state: CampaignState, raw: unknown): { result: string; 
     ...(damage != null ? { damage } : {}),
   });
   return { result: resultForModel, roll };
+}
+
+/** Execute roll_critical_injury: 2d6 on the §13 table, recorded on the target. */
+function executeCritInjury(state: CampaignState, raw: unknown): string {
+  const input = RollCriticalInjuryInput.parse(raw);
+  const { dice, total } = rollDice(2, 6);
+
+  const targetSheet =
+    input.who === "pc"
+      ? (state.character as { criticalInjuries?: Array<{ id: string; table: string; roll: number; name: string; effect: string; fullFix: string; treatment: string }>; deathSavePenalty?: number })
+      : (state.world.npcs.find((n) => n.id === input.npcId)?.sheet as typeof state.character | undefined);
+
+  if (!targetSheet) return JSON.stringify({ error: `no target (${input.who} ${input.npcId ?? ""})` });
+
+  const s = targetSheet as { criticalInjuries?: Array<{ id: string; table: string; roll: number; name: string; effect: string; fullFix: string; treatment: string }>; deathSavePenalty?: number };
+  const existing = s.criticalInjuries ?? [];
+  const row = resolveCritInjury(input.table, total, existing);
+
+  const injury = {
+    id: `ci_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    table: input.table,
+    roll: total,
+    name: row.name,
+    effect: row.effect,
+    fullFix: row.fullFix,
+    treatment: "untreated" as const,
+  };
+  s.criticalInjuries = [...existing, injury];
+  if (input.who === "pc" && row.deathSavePenalty) {
+    s.deathSavePenalty = (s.deathSavePenalty ?? 0) + row.deathSavePenalty;
+  }
+
+  const line = `Critical injury — ${input.who === "pc" ? state.character.name || "PC" : input.npcId} (${input.table} 2d6 [${dice.join(",")}]=${total}): ${row.name} — ${row.effect}`;
+  state.sessionLog.push({ ts: Date.now(), type: "roll", text: line, compressed: false, roll: { actor: input.who === "pc" ? state.character.name || "PC" : input.npcId ?? "?", isPC: input.who === "pc", pw: null, dv: null, dice, total, outcome: row.name, source: "engine" } });
+
+  return JSON.stringify({
+    table: input.table,
+    dice,
+    total,
+    name: row.name,
+    effect: row.effect,
+    fullFix: row.fullFix,
+    deathSavePenaltyAdded: input.who === "pc" ? row.deathSavePenalty ?? 0 : 0,
+    bonusHpDamage: 5,
+    note: "Apply the 5 bonus HP damage in commit_turn's delta and narrate. The injury is already recorded.",
+  });
 }
 
 /** Execute generate_npc: deterministic stat block, cached onto world.npcs. */
@@ -404,6 +453,9 @@ async function drive(
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.generateNpc) {
         const result = executeGenerateNpc(state, input);
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
+      } else if (tu.name === TOOL_NAMES.critInjury) {
+        const result = executeCritInjury(state, input);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.startCombat) {
         // Push any tool results gathered so far, then suspend for PC initiative.
