@@ -15,6 +15,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import type { CampaignState } from "../state/campaignState";
 import { applyDelta } from "../state/delta";
+import { toInputSchema } from "./tools";
 
 const CompressionResult = z.object({
   npcFacts: z.array(z.object({ id: z.string(), name: z.string().optional(), addFacts: z.array(z.string()) })).default([]),
@@ -87,7 +88,7 @@ export async function maybeCompress(state: CampaignState, opts: CompressOpts): P
         {
           name: "record_facts",
           description: "Record the durable facts distilled from the transcript.",
-          input_schema: z.toJSONSchema(CompressionResult) as Anthropic.Tool.InputSchema,
+          input_schema: toInputSchema(CompressionResult),
         },
       ],
       tool_choice: { type: "tool", name: "record_facts" },

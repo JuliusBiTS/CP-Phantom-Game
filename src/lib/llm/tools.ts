@@ -14,6 +14,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { TurnDelta } from "../state/delta";
 import { z } from "zod";
 
+/** Zod → JSON Schema for an Anthropic tool `input_schema` (drops `$schema`). */
+export function toInputSchema(schema: z.ZodType): Anthropic.Tool.InputSchema {
+  const js = z.toJSONSchema(schema, { io: "input" }) as Record<string, unknown>;
+  delete js.$schema;
+  return js as Anthropic.Tool.InputSchema;
+}
+
 export const TOOL_NAMES = {
   roll: "roll_dice",
   playerRoll: "request_player_roll",
@@ -47,18 +54,18 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     name: TOOL_NAMES.roll,
     description:
       "Roll real dice for a NON-PC entity (enemy, NPC, ally, companion, drone, turret) or an environmental/hazard check. The backend computes the result with a real RNG and returns it. NEVER narrate the outcome of such a roll before calling this.",
-    input_schema: z.toJSONSchema(RollDiceInput) as Anthropic.Tool.InputSchema,
+    input_schema: toInputSchema(RollDiceInput),
   },
   {
     name: TOOL_NAMES.playerRoll,
     description:
       "Ask the player to physically roll for their OWN character. This suspends the turn until the player types the result. Use for every action or reaction taken by the PC. Do not also call commit_turn this step.",
-    input_schema: z.toJSONSchema(RequestPlayerRollInput) as Anthropic.Tool.InputSchema,
+    input_schema: toInputSchema(RequestPlayerRollInput),
   },
   {
     name: TOOL_NAMES.commit,
     description:
       "End the turn. Provide the narration the player sees and the full structured delta of state changes. Call exactly once, and never in the same step as request_player_roll.",
-    input_schema: z.toJSONSchema(CommitTurnInput) as Anthropic.Tool.InputSchema,
+    input_schema: toInputSchema(CommitTurnInput),
   },
 ];
