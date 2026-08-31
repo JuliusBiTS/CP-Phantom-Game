@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { BootSequence } from "@/components/BootSequence";
 
 export const metadata: Metadata = {
   title: "CP Phantom — Solo",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <BootSequence />
+        {children}
+      </body>
     </html>
   );
 }

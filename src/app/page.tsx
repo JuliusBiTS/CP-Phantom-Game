@@ -405,7 +405,9 @@ export default function Home() {
           </details>
 
           {pending ? (
-            <section className="panel panel-accent">
+            <section className="panel panel-accent reticle">
+              <span className="reticle-tr" />
+              <span className="reticle-bl" />
               <h2 style={{ color: "var(--red-bright)" }}>Your roll</h2>
               <p style={{ margin: "4px 0" }}>{pending.prompt}</p>
               <p style={{ margin: "4px 0", fontFamily: "var(--font)" }}>
