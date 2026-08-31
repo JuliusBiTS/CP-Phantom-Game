@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   findTalent, resolveTalentLevel, sumTalentMaxBonus,
-  findHack, effectiveHackIp,
+  effectiveHackIp,
   findTechnique,
   allCyberwareNames, cyberwareImpact,
   TALENT_TREES, HACK_CATEGORIES,

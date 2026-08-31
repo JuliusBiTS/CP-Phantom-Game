@@ -22,20 +22,19 @@ try {
   /* older builds */
 }
 
-const MODEL_ID = "Xenova/whisper-tiny.en";
-
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 
 /**
- * Load order. The default auto-pick and the int8/`q8` decoder variant both hit
- * an ONNX Runtime Web bug ("Missing required scale … TransposeDQWeightsForMatMulNBits")
- * on some Whisper exports, so we try unquantised weights first and also disable
+ * Load order. `whisper-base.en` is a big accuracy jump over tiny and worth the
+ * download for a Firefox user who wants dictation. Quantised decoder variants
+ * hit an ONNX Runtime Web bug ("Missing required scale …
+ * TransposeDQWeightsForMatMulNBits"), so we try unquantised first and disable
  * the extended graph optimisation that trips on quantised MatMul.
  */
-const ATTEMPTS: Array<{ dtype: "fp16" | "fp32" | "q8"; label: string }> = [
-  { dtype: "fp16", label: "half precision (~78 MB)" },
-  { dtype: "fp32", label: "full precision (~150 MB)" },
-  { dtype: "q8", label: "int8 (~40 MB)" },
+const ATTEMPTS: Array<{ model: string; dtype: "fp16" | "fp32" | "q8"; label: string }> = [
+  { model: "Xenova/whisper-base.en", dtype: "fp16", label: "whisper-base.en (~145 MB)" },
+  { model: "Xenova/whisper-tiny.en", dtype: "fp16", label: "whisper-tiny.en (~78 MB)" },
+  { model: "Xenova/whisper-tiny.en", dtype: "fp32", label: "whisper-tiny.en full (~150 MB)" },
 ];
 
 async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
@@ -43,7 +42,7 @@ async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
   for (const attempt of ATTEMPTS) {
     try {
       self.postMessage({ type: "progress", pct: 0, label: attempt.label });
-      return (await pipeline("automatic-speech-recognition", MODEL_ID, {
+      return (await pipeline("automatic-speech-recognition", attempt.model, {
         dtype: { encoder_model: attempt.dtype, decoder_model_merged: attempt.dtype },
         device: "wasm",
         session_options: { graphOptimizationLevel: "basic" },

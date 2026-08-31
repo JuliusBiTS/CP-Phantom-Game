@@ -3,16 +3,19 @@
 /**
  * Speech-to-text dictation — SOLO_MODE_BUILD_PLAN.md §5.2a.
  *
- * Two free, no-key paths, auto-selected:
- *  - Chrome / Edge → the browser-native Web Speech API (instant, streaming
- *    interim results; the browser's own recognizer handles the audio).
- *  - Firefox / Safari desktop (no Web Speech API) → local Whisper via
- *    transformers.js, running entirely in the browser. ~40 MB model downloads
- *    once and is cached; no server, no key.
+ * Three paths, auto-selected best-first:
+ *  1. Cloud (if the server has GROQ_API_KEY / OPENAI_API_KEY) → /api/transcribe.
+ *     Instant, accurate, tiny bandwidth. Groq has a free tier.
+ *  2. Chrome / Edge → the browser-native Web Speech API (free, streaming).
+ *  3. Firefox / Safari desktop with no cloud key → local Whisper via
+ *     transformers.js, entirely in-browser (free, ~145 MB one-time model).
+ *
+ * `localStorage.cpph_dictation` forces one: "cloud" | "webspeech" | "whisper".
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocalWhisper } from "@/lib/whisper/useLocalWhisper";
+import { useCloudWhisper, useCloudTranscribeAvailable } from "@/lib/whisper/useCloudWhisper";
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 interface SpeechRecognitionLike extends EventTarget {
@@ -48,37 +51,60 @@ interface Props {
 }
 
 export function DictationButton(props: Props) {
-  const [mode, setMode] = useState<"checking" | "webspeech" | "whisper">("checking");
+  const { available: cloud } = useCloudTranscribeAvailable();
+  const [pref, setPref] = useState<string | null | undefined>(undefined);
   useEffect(() => {
-    // Resolve which engine to use, once, after mount (avoids an SSR/hydration
-    // mismatch). `localStorage.cpph_dictation = "whisper"` forces local Whisper
-    // even where Web Speech exists (privacy — no audio leaves the browser).
-    let pref: string | null = null;
+    let p: string | null = null;
     try {
-      pref = localStorage.getItem("cpph_dictation");
+      p = localStorage.getItem("cpph_dictation");
     } catch {
       /* ignore */
     }
-    const resolved =
-      pref === "whisper"
-        ? "whisper"
-        : pref === "webspeech" && getCtor()
-          ? "webspeech"
-          : getCtor()
-            ? "webspeech"
-            : "whisper";
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMode(resolved);
+    setPref(p);
   }, []);
 
-  if (mode === "checking") {
+  if (pref === undefined || cloud === null) {
     return (
       <button type="button" disabled style={{ padding: "6px 10px" }}>
         🎤 Dictate
       </button>
     );
   }
-  return mode === "webspeech" ? <WebSpeechDictation {...props} /> : <WhisperDictation onFinalText={props.onFinalText} />;
+
+  const hasWebSpeech = !!getCtor();
+  const mode =
+    pref === "cloud" && cloud
+      ? "cloud"
+      : pref === "webspeech" && hasWebSpeech
+        ? "webspeech"
+        : pref === "whisper"
+          ? "whisper"
+          : cloud
+            ? "cloud"
+            : hasWebSpeech
+              ? "webspeech"
+              : "whisper";
+
+  if (mode === "cloud") return <CloudDictation onFinalText={props.onFinalText} />;
+  if (mode === "webspeech") return <WebSpeechDictation {...props} />;
+  return <WhisperDictation onFinalText={props.onFinalText} />;
+}
+
+function CloudDictation({ onFinalText }: { onFinalText: (t: string) => void }) {
+  const { status, errorMsg, startRecording, stopRecording } = useCloudWhisper(onFinalText);
+  const recording = status === "recording";
+  const label =
+    status === "transcribing" ? "transcribing…" : status === "error" ? errorMsg : status === "recording" ? null : null;
+  return (
+    <Shell
+      listening={recording}
+      onClick={() => (recording ? stopRecording() : startRecording())}
+      disabled={status === "transcribing"}
+      statusMsg={label}
+      idleText="🎤 Dictate"
+    />
+  );
 }
 
 // ── Web Speech API path (Chrome / Edge) ────────────────────────────────────
