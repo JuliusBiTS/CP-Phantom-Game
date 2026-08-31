@@ -9,6 +9,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CampaignState } from "@/lib/state/campaignState";
 import { autoLayoutBoard, packBoard } from "@/lib/board/layout";
+import { PortraitUpload } from "@/components/PortraitUpload";
+import { CaseFile } from "@/components/CaseFile";
 
 type Board = CampaignState["missionBoard"];
 type BWindow = Board["windows"][number];
@@ -188,6 +190,9 @@ export function MissionBoard({
         <button onClick={() => onPatchState((s) => { s.missionBoard = autoLayoutBoard(s, s.missionBoard.activeMissionQuestId); })} style={{ padding: "3px 9px", fontSize: 10 }}>
           {board.windows.length ? "Rebuild" : "Build board"}
         </button>
+        <button onClick={() => window.print()} style={{ padding: "3px 9px", fontSize: 10 }} title="Print / save the board as a case file">
+          🖨 Case file
+        </button>
         <button onClick={onClose} style={{ padding: "3px 9px", fontSize: 10 }}>Close (M)</button>
       </span>
     </div>
@@ -196,6 +201,7 @@ export function MissionBoard({
   if (narrow) {
     return (
       <div className="board-shell board-stacked">
+        <CaseFile state={state} />
         {header}
         <div style={{ padding: 12, display: "grid", gap: 10 }}>
           {board.windows
@@ -213,6 +219,7 @@ export function MissionBoard({
 
   return (
     <div className="board-shell">
+      <CaseFile state={state} />
       {header}
       <div className="board-canvas" key={board.blowUpAt}>
         <div className="board-grid" />
@@ -450,7 +457,14 @@ function WindowBody({
       const n = state.world.npcs.find((x) => x.id === w.refId);
       if (!n) return <div className="muted">— gone —</div>;
       return (
-        <div style={{ fontSize: 11 }}>
+        <div style={{ fontSize: 11, display: "flex", gap: 8 }}>
+          <PortraitUpload
+            current={n.portrait}
+            size={48}
+            label={`${n.name} portrait`}
+            onChange={(p) => patchState((s) => { const x = s.world.npcs.find((y) => y.id === n.id); if (x) x.portrait = p; })}
+          />
+          <div style={{ flex: 1 }}>
           {GmNote}
           <div>
             <span className="muted">DISPOSITION</span>{" "}
@@ -471,6 +485,7 @@ function WindowBody({
             onAdd={(f) => patchState((s) => { const x = s.world.npcs.find((y) => y.id === n.id); if (x && !x.notableFacts.includes(f)) x.notableFacts.push(f); })}
           />
           <PlayerAnnotation w={w} patchWin={patchWin} />
+          </div>
         </div>
       );
     }

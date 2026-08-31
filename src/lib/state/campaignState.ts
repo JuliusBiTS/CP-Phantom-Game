@@ -46,6 +46,8 @@ export const CharacterSheet = z
     status_effects: z.array(z.any()).optional(),
     eurodollar: z.number().optional(),
     notes: z.string().optional(),
+    /** Portrait — a downscaled data URL (FEATURE_PLAN §M5). */
+    portrait: z.string().optional(),
     /** Critical injuries — rulebook §13. Persist between sessions; don't heal on rest. */
     criticalInjuries: z
       .array(
@@ -84,6 +86,8 @@ export const WorldNpc = z.object({
   status: z.enum(["alive", "dead", "unknown"]).default("alive"),
   lastSeen: z.string().optional(),
   notableFacts: NoteList.default([]),
+  /** Portrait — a downscaled data URL (FEATURE_PLAN §M5). */
+  portrait: z.string().optional(),
   /** Present only once this NPC actually has to roll for something. Generated
    *  on demand via CP Phantom's generator logic and cached here so the same
    *  NPC rolls consistently later. */

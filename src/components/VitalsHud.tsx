@@ -11,6 +11,7 @@ import type { CampaignState, CharacterSheet as Sheet } from "@/lib/state/campaig
 import { pcPwReference } from "@/lib/rules/live";
 import { getWoundState } from "@/lib/rules/woundState";
 import { humanityBand } from "@/lib/rules/derived";
+import { PortraitUpload } from "@/components/PortraitUpload";
 
 function Bar({ label, cur, max, colorAt }: { label: string; cur: number; max: number; colorAt?: (pct: number) => string }) {
   const pct = max ? Math.max(0, Math.min(1, cur / max)) : 0;
@@ -59,10 +60,13 @@ export function VitalsHud({
 
   return (
     <section className="panel" style={{ borderColor: wound ? "var(--red)" : "var(--border)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "var(--font-display)", fontSize: 15, letterSpacing: "0.05em" }}>
-          {c.name}
-          {wound && <span className="danger" style={{ fontSize: 11 }}>  {wound.name.toUpperCase()} −{Math.round((1 - wound.pwMult) * 100)}%</span>}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <PortraitUpload current={c.portrait} size={40} onChange={(p) => onPatch((c) => { c.portrait = p; })} />
+          <span style={{ fontFamily: "var(--font-display)", fontSize: 15, letterSpacing: "0.05em" }}>
+            {c.name}
+            {wound && <span className="danger" style={{ fontSize: 11 }}>  {wound.name.toUpperCase()} −{Math.round((1 - wound.pwMult) * 100)}%</span>}
+          </span>
         </span>
         <span style={{ display: "flex", gap: 6 }}>
           <button onClick={onOpenSheet} style={{ padding: "3px 10px" }}>Character (C)</button>

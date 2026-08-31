@@ -670,3 +670,23 @@ code {
 @media (prefers-reduced-motion: reduce) {
   .stream-caret { animation: none; }
 }
+
+/* ── Case file (print) ── FEATURE_PLAN §M5 */
+.case-file { display: none; }
+@media print {
+  body * { visibility: hidden !important; }
+  .case-file, .case-file * { visibility: visible !important; }
+  .case-file {
+    display: block;
+    position: absolute;
+    inset: 0;
+    padding: 24px 32px;
+    background: #fff;
+    color: #000;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .case-file h1, .case-file h2 { color: #000; }
+  .case-file ul, .case-file ol { padding-left: 18px; }
+}
