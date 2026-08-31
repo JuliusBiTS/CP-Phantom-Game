@@ -358,6 +358,15 @@ A new chat should ask these, not assume:
 
 **Phase 2 — Real integration.** Live read-only import from CP Phantom's Firebase, the life-path character creator (Section 5.5), Campaign mode with campaign-bible generation (Section 5.6), the GM push-back review pipeline (Section 5.4) wired to actually write approved changes back to CP Phantom.
 
+> **Phase 2 build status (2026-08-31): content-complete, browser-verified, 65 tests green.**
+> - **Character import** — `listCpPhantomCharacters()` / `readCpPhantomCharacter()` (read-only, still no write path to `campaign/`); a "Import from CP Phantom" source in the new-campaign form; `meta.importedFromCpPhantomId` records the push-back target.
+> - **Life-path creator** (`src/lib/lifepath/` + `LifePathWizard.tsx`) — rulebook v12 §27: 6 origins, 2× childhood W10, per-year (7-18) 2 activities + W20 each + W10 year-event (skippable for testing), free points with the 10-per-tree cap, Abschluss W10 tables. Player types every die. Output is a full CP Phantom `CharacterSheet` with a life-path journal in `notes`. Derived stats via new `src/lib/rules/derived.ts` (v12 §1.3).
+> - **Campaign bible** (`src/lib/llm/bible.ts` + `/api/bible`) — generated once at campaign creation for campaign mode: antagonist, 3-5 acts, 2-3 pre-committed twists, NPC true motivations. Injected into every turn prompt, GM-only, shown in a spoiler panel.
+> - **GM push-back** (`src/lib/storage/pushback.ts`) — per-line Approve/Reject in a review panel, then "Push N approved". Only 4 kinds auto-apply (xp→globalXP, humanity→humanity_current clamped, loot→append inventory, note→append notes), each a single leaf-path write computed from the current value; talents/injuries/stats are review-only; every write logged under `soloCampaigns/pushbackLog/`. The `computeLeafWrite` core has 7 tests.
+> - **Minimal design skin** pulled forward from Phase 3 — CP Phantom's `:root` tokens verbatim, the two fonts, dark HUD-grid treatment, panels; the real new-campaign form replaced the `window.prompt` flow. Boot sequence + corner-bracket reticle + combat-tracker view remain Phase 3.
+>
+> **The gate before Phase 3 is still the user's live playtest** (needs the Vercel deploy). Nothing in Phase 2 has been exercised against the live Anthropic API yet.
+
 **Phase 3 — Polish.** Full visual design pass matching CP Phantom's system (Section 7), a boot-sequence intro, an embedded lightweight combat-tracker view for real fights (reusing CP Phantom's wound-state/PW display components rather than resolving combat purely through prose, since combat is exactly where "did HP actually track correctly" matters most), optional local-Whisper dictation upgrade (Section 5.2a), general UX polish.
 
 Test with the real user between every phase — don't build all three before he's touched anything.
