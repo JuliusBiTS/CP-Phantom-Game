@@ -3,18 +3,16 @@
 /**
  * Speech-to-text dictation — SOLO_MODE_BUILD_PLAN.md §5.2a.
  *
- * Browser-native Web Speech API (`SpeechRecognition`). No API key, no service,
- * nothing to configure — the browser's own recognizer handles the audio
- * (Chrome/Edge → Google, Safari → Apple). A local Whisper model via
- * transformers.js is a possible Phase 3 upgrade (also free, ~40-200 MB download).
- *
- * Chrome quirks handled here: `continuous` mode still fires `onend` after a
- * silence, so we auto-restart while the user still wants to dictate; and we ask
- * for the mic explicitly via getUserMedia first so the permission prompt is
- * reliable and denials produce a clear message instead of silence.
+ * Two free, no-key paths, auto-selected:
+ *  - Chrome / Edge → the browser-native Web Speech API (instant, streaming
+ *    interim results; the browser's own recognizer handles the audio).
+ *  - Firefox / Safari desktop (no Web Speech API) → local Whisper via
+ *    transformers.js, running entirely in the browser. ~40 MB model downloads
+ *    once and is cached; no server, no key.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocalWhisper } from "@/lib/whisper/useLocalWhisper";
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 interface SpeechRecognitionLike extends EventTarget {
@@ -43,34 +41,62 @@ function getCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export function DictationButton({
-  onFinalText,
-  onInterimText,
-  lang = "en-US",
-}: {
+interface Props {
   onFinalText: (text: string) => void;
   onInterimText?: (text: string) => void;
   lang?: string;
-}) {
-  const [supported, setSupported] = useState(false);
+}
+
+export function DictationButton(props: Props) {
+  const [mode, setMode] = useState<"checking" | "webspeech" | "whisper">("checking");
+  useEffect(() => {
+    // Resolve which engine to use, once, after mount (avoids an SSR/hydration
+    // mismatch). `localStorage.cpph_dictation = "whisper"` forces local Whisper
+    // even where Web Speech exists (privacy — no audio leaves the browser).
+    let pref: string | null = null;
+    try {
+      pref = localStorage.getItem("cpph_dictation");
+    } catch {
+      /* ignore */
+    }
+    const resolved =
+      pref === "whisper"
+        ? "whisper"
+        : pref === "webspeech" && getCtor()
+          ? "webspeech"
+          : getCtor()
+            ? "webspeech"
+            : "whisper";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMode(resolved);
+  }, []);
+
+  if (mode === "checking") {
+    return (
+      <button type="button" disabled style={{ padding: "6px 10px" }}>
+        🎤 Dictate
+      </button>
+    );
+  }
+  return mode === "webspeech" ? <WebSpeechDictation {...props} /> : <WhisperDictation onFinalText={props.onFinalText} />;
+}
+
+// ── Web Speech API path (Chrome / Edge) ────────────────────────────────────
+
+function WebSpeechDictation({ onFinalText, onInterimText, lang = "en-US" }: Props) {
   const [listening, setListening] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
-  const wantRef = useRef(false); // does the user still want to be dictating?
+  const wantRef = useRef(false);
   const cbRef = useRef({ onFinalText, onInterimText });
   const startRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     cbRef.current = { onFinalText, onInterimText };
   }, [onFinalText, onInterimText]);
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setSupported(getCtor() !== null));
-    return () => {
-      cancelAnimationFrame(id);
-      wantRef.current = false;
-      recRef.current?.abort();
-    };
+  useEffect(() => () => {
+    wantRef.current = false;
+    recRef.current?.abort();
   }, []);
 
   const startRecognition = useCallback(() => {
@@ -80,7 +106,7 @@ export function DictationButton({
     rec.lang = lang;
     rec.continuous = true;
     rec.interimResults = true;
-    rec.onstart = () => setStatus("listening…");
+    rec.onstart = () => setStatusMsg("listening…");
     rec.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -91,37 +117,34 @@ export function DictationButton({
       if (interim) cbRef.current.onInterimText?.(interim);
     };
     rec.onerror = (ev) => {
-      if (ev.error === "no-speech" || ev.error === "aborted") return; // transient — onend restarts
+      if (ev.error === "no-speech" || ev.error === "aborted") return;
       wantRef.current = false;
       setListening(false);
-      setStatus(
+      setStatusMsg(
         ev.error === "not-allowed" || ev.error === "service-not-allowed"
-          ? "Microphone blocked — allow it for this site in your browser's address-bar permissions, then try again."
+          ? "Mic blocked — allow it for this site, then retry."
           : ev.error === "network"
-            ? "Speech service unreachable (network)."
+            ? "Speech service unreachable."
             : `Speech error: ${ev.error}`,
       );
     };
     rec.onend = () => {
-      // Chrome ends the session on silence; restart if the user still wants it.
       if (wantRef.current) {
         try {
           rec.start();
         } catch {
-          setTimeout(() => {
-            if (wantRef.current) startRef.current();
-          }, 250);
+          setTimeout(() => wantRef.current && startRef.current(), 250);
         }
       } else {
         setListening(false);
-        setStatus(null);
+        setStatusMsg(null);
       }
     };
     recRef.current = rec;
     try {
       rec.start();
     } catch {
-      // "already started" — ignore
+      /* already started */
     }
   }, [lang]);
 
@@ -136,44 +159,90 @@ export function DictationButton({
       return;
     }
     if (!window.isSecureContext) {
-      setStatus("Dictation needs HTTPS (or localhost).");
+      setStatusMsg("Dictation needs HTTPS (or localhost).");
       return;
     }
-    setStatus("requesting microphone…");
+    setStatusMsg("requesting microphone…");
     try {
-      // Explicit prompt — more reliable than letting SpeechRecognition ask.
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop()); // release it; SpeechRecognition opens its own
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop());
     } catch {
-      setStatus("Microphone blocked — allow it for this site, then try again.");
+      setStatusMsg("Mic blocked — allow it for this site, then retry.");
       return;
     }
     wantRef.current = true;
     setListening(true);
-    setStatus("listening…");
+    setStatusMsg("listening…");
     startRecognition();
   }, [listening, startRecognition]);
 
+  return <Shell listening={listening} onClick={toggle} statusMsg={statusMsg} />;
+}
+
+// ── Local Whisper path (Firefox / Safari desktop) ─────────────────────────
+
+function WhisperDictation({ onFinalText }: { onFinalText: (t: string) => void }) {
+  const { status, progress, errorMsg, startRecording, stopRecording } = useLocalWhisper(onFinalText);
+  const recording = status === "recording";
+
+  const label =
+    status === "loading-model"
+      ? `loading model ${progress}%`
+      : status === "transcribing"
+        ? "transcribing…"
+        : status === "recording"
+          ? null
+          : status === "error"
+            ? errorMsg
+            : status === "idle"
+              ? "first use downloads a ~40 MB model"
+              : null;
+
+  return (
+    <Shell
+      listening={recording}
+      onClick={() => (recording ? stopRecording() : startRecording())}
+      disabled={status === "loading-model" || status === "transcribing"}
+      statusMsg={label}
+      idleText="🎤 Dictate (local Whisper)"
+    />
+  );
+}
+
+// ── shared button shell ───────────────────────────────────────────────────
+
+function Shell({
+  listening,
+  onClick,
+  statusMsg,
+  disabled,
+  idleText = "🎤 Dictate",
+}: {
+  listening: boolean;
+  onClick: () => void;
+  statusMsg?: string | null;
+  disabled?: boolean;
+  idleText?: string;
+}) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <button
         type="button"
-        onClick={toggle}
-        disabled={!supported}
-        title={supported ? (listening ? "Stop dictation" : "Dictate (speech to text)") : "Speech recognition needs Chrome or Edge."}
+        onClick={onClick}
+        disabled={disabled}
         aria-pressed={listening}
-        style={{
-          padding: "6px 10px",
-          background: listening ? "var(--red, #7a1428)" : undefined,
-          cursor: supported ? "pointer" : "not-allowed",
-        }}
+        style={{ padding: "6px 10px", background: listening ? "var(--red, #7a1428)" : undefined }}
       >
-        {listening ? "● REC — stop" : "🎤 Dictate"}
+        {listening ? "● REC — stop" : idleText}
       </button>
-      {!supported && <span className="muted" style={{ fontSize: 11 }}>Chrome / Edge only</span>}
-      {status && (
-        <span style={{ fontSize: 11, color: status.startsWith("listening") ? "var(--green-bright,#29ffa8)" : "var(--red-bright, #ff3b5c)" }}>
-          {status}
+      {statusMsg && (
+        <span
+          style={{
+            fontSize: 11,
+            color: statusMsg.startsWith("listening") ? "var(--green-bright,#29ffa8)" : "var(--text3,#56638a)",
+          }}
+        >
+          {statusMsg}
         </span>
       )}
     </span>
