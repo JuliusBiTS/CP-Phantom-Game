@@ -8,6 +8,16 @@
 
 import type { Combat, Mode } from "@/lib/state/campaignState";
 
+const NETRUN_CHIPS: Array<[string, string]> = [
+  ["Move down", "I move to the next floor."],
+  ["Scan", "I run a Ping to map what's on this floor and ahead."],
+  ["Crack ICE", "I attack the ICE on this floor — "],
+  ["Grab the file", "I pull the data off this floor."],
+  ["Slip past", "I try to slip past without triggering anything — "],
+  ["Cover my tracks", "I run a Dead Drop to wipe the trace on me."],
+  ["Jack out", "I jack out."],
+];
+
 const DOWNTIME_CHIPS: Array<[string, string]> = [
   ["Shop", "I hit up a fixer / vendor to buy gear — "],
   ["Ripperdoc", "I go see my ripperdoc — "],
@@ -33,12 +43,15 @@ export function QuickActions({
 }) {
   const inCombat = !!combat?.active;
   const inDowntime = !inCombat && mode === "downtime";
+  const inNetrun = !inCombat && mode === "netrun";
   const targets = (combat?.order ?? []).filter((o) => !o.isPC);
   const targetName =
     targets.find((t) => t.id === combat?.pcTargetId)?.name ?? targets[0]?.name ?? "the nearest enemy";
   const primary = weapons[0];
 
-  const chips: Array<[string, string]> = inDowntime
+  const chips: Array<[string, string]> = inNetrun
+    ? NETRUN_CHIPS
+    : inDowntime
     ? DOWNTIME_CHIPS
     : inCombat
     ? [
@@ -69,7 +82,7 @@ export function QuickActions({
         <button
           key={label}
           onClick={() => onPick(text)}
-          style={{ padding: "3px 9px", fontSize: 10, borderColor: inCombat ? "var(--red)" : inDowntime ? "var(--gold)" : "var(--border2)" }}
+          style={{ padding: "3px 9px", fontSize: 10, borderColor: inCombat ? "var(--red)" : inDowntime ? "var(--gold)" : inNetrun ? "var(--cyan-dim)" : "var(--border2)" }}
         >
           {label}
         </button>

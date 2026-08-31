@@ -11,6 +11,8 @@
 import type { CampaignState, Mode } from "../../state/campaignState";
 import { EXPLORATION_MODE } from "./exploration";
 import { DOWNTIME_MODE } from "./downtime";
+import { NETRUN_MODE } from "./netrun";
+import { CHASE_MODE } from "./chase";
 
 export interface ModeDef {
   /** Appended to the system prompt while this mode is active. */
@@ -19,15 +21,11 @@ export interface ModeDef {
   contextSlice?: (state: CampaignState) => Record<string, unknown> | undefined;
 }
 
-const STUB = (name: string): ModeDef => ({
-  promptFragment: `\n\n## Mode: ${name}\n\nThis subsystem isn't built yet — steer the fiction back to exploration and set \`delta.mode.exit = true\`.`,
-});
-
 export const MODES: Record<Mode, ModeDef> = {
   exploration: EXPLORATION_MODE,
   downtime: DOWNTIME_MODE,
-  netrun: STUB("netrun"),
-  chase: STUB("chase"),
+  netrun: NETRUN_MODE,
+  chase: CHASE_MODE,
 };
 
 export function modePromptFragment(state: CampaignState): string {

@@ -332,6 +332,33 @@ export const Downtime = z.object({
 });
 export type Downtime = z.infer<typeof Downtime>;
 
+/** NET dive — FEATURE_PLAN.md §M7. Active while `mode === "netrun"`. IP itself
+ *  lives on the character sheet (ip_current / ip_max). */
+export const NetArchFloor = z.object({
+  floor: z.number(),
+  name: z.string(),
+  kind: z.enum(["passthrough", "file", "control", "ice", "blackwall"]).default("passthrough"),
+  ice: z.object({ name: z.string(), firewall: z.number(), effect: z.string(), lethal: z.boolean().optional() }).nullable().default(null),
+  loot: z.string().optional(),
+  note: z.string().optional(),
+  cleared: z.boolean().default(false),
+});
+
+export const Netrun = z.object({
+  active: z.boolean().default(false),
+  target: z.string().default(""),
+  deck: z.enum(["Basic", "Standard", "Military", "Blackmarket"]).default("Standard"),
+  connection: z.enum(["wired", "local", "remote"]).default("local"),
+  /** 0–100; NetWatch / the system's runner responds at 100. */
+  trace: z.number().default(0),
+  /** §25.1 alarm ladder, 0–3. */
+  alarm: z.number().default(0),
+  architecture: z.array(NetArchFloor).default([]),
+  position: z.number().default(0),
+  daemons: z.array(z.string()).default([]),
+});
+export type Netrun = z.infer<typeof Netrun>;
+
 export const CampaignState = z.object({
   schemaVersion: z.literal(1),
   meta: z.object({
@@ -365,6 +392,7 @@ export const CampaignState = z.object({
   combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null, zones: [], overwatch: [], flinkUsed: false }),
   mode: Mode.default("exploration"),
   downtime: Downtime.default({ daysElapsed: 0 }),
+  netrun: Netrun.default({ active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] }),
   consequences: z.array(Consequence).default([]),
   timeline: z.array(TimelineBeat).default([]),
   sessionLog: z.array(SessionLogEntry).default([]),
@@ -431,6 +459,7 @@ export function newCampaignState(args: {
     combat: { active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null, zones: [], overwatch: [], flinkUsed: false },
     mode: "exploration",
     downtime: { daysElapsed: 0 },
+    netrun: { active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] },
     consequences: [],
     timeline: [],
     sessionLog: [],

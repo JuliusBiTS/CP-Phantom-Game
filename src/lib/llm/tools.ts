@@ -28,7 +28,25 @@ export const TOOL_NAMES = {
   generateNpc: "generate_npc",
   startCombat: "start_combat",
   critInjury: "roll_critical_injury",
+  enterNetrun: "enter_netrun",
 } as const;
+
+export const EnterNetrunInput = z.object({
+  target: z.string().describe("What the PC is diving, e.g. 'the Konpeki floor-42 subnet'."),
+  connection: z.enum(["wired", "local", "remote"]).default("local"),
+  deck: z.enum(["Basic", "Standard", "Military", "Blackmarket"]).optional().describe("Override the PC's deck quality if the sheet doesn't say."),
+  architecture: z
+    .array(
+      z.object({
+        name: z.string().describe("Floor label, e.g. 'Lobby node', 'Datastore', 'Control core'."),
+        kind: z.enum(["passthrough", "file", "control", "ice", "blackwall"]).default("passthrough"),
+        ice: z.string().optional().describe("ICE name if this floor is guarded: Watchdog ICE / Hellhound ICE / Kraken ICE / Wisp Daemon / Sentinel Daemon / Black ICE. The backend fills in its Firewall + effect."),
+        loot: z.string().optional().describe("What's on this floor (a file, eddies, a control the PC wants)."),
+        note: z.string().optional(),
+      }),
+    )
+    .describe("Top-down, 3–7 floors. First = entry."),
+});
 
 export const RollCriticalInjuryInput = z.object({
   who: z.enum(["pc", "npc"]).describe("Whose injury this is."),
@@ -144,6 +162,12 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     description:
       "Roll a critical injury (rulebook §13). Trigger: an attack scores a crit success (first die = 1) AND net damage after armour > 0, OR any hit taken while Mortally Wounded. The backend rolls 2d6 on the body/head table, records the injury on the target, and returns the row + the +5 bonus HP damage. You then apply that 5 HP in commit_turn's delta (pcHpChange or npcHpChanges) and narrate the wound — do NOT invent the injury yourself.",
     input_schema: toInputSchema(RollCriticalInjuryInput),
+  },
+  {
+    name: TOOL_NAMES.enterNetrun,
+    description:
+      "The PC jacks into an architecture. You provide the concept — floors + which are guarded by named ICE; the backend fills in ICE Firewall/effect from the §25 catalog and switches to NETRUN mode. Use for a deliberate dive of a standalone system (a corp subnet, a security architecture). One-off combat hacks against a person don't need this — just request_player_roll vs their Firewall.",
+    input_schema: toInputSchema(EnterNetrunInput),
     // Cache breakpoint: system + all tool schemas are re-sent every model call
     // (several per turn in combat) and never change — cache the whole prefix.
     cache_control: { type: "ephemeral" },

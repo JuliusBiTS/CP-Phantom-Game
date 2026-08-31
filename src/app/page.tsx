@@ -26,6 +26,7 @@ import { estimateCostUsd, formatCostUsd } from "@/lib/llm/cost";
 import { runTurnStream, StreamUnavailable } from "@/lib/llm/streamClient";
 import { ToneEditor } from "@/components/ToneEditor";
 import { DowntimePanel } from "@/components/DowntimePanel";
+import { NetrunView } from "@/components/NetrunView";
 import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
@@ -520,6 +521,14 @@ export default function Home() {
             </section>
           )}
 
+          {state.mode === "netrun" && state.netrun.active && (
+            <NetrunView
+              state={state}
+              busy={busy}
+              onExit={() => sendTurn({ kind: "action", text: "I jack out." })}
+            />
+          )}
+
           {state.mode === "downtime" && !combat?.active && (
             <DowntimePanel
               state={state}
@@ -670,6 +679,8 @@ export default function Home() {
                   ? `Round ${combat.round} — your turn`
                   : state.mode === "downtime"
                   ? "Downtime — what do you take care of?"
+                  : state.mode === "netrun"
+                  ? "In the NET — what's your move?"
                   : "What do you do?"}
               </h2>
               {!combat?.active && state.suggestedActions.length > 0 && (

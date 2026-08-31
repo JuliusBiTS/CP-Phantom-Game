@@ -9,6 +9,7 @@
 
 import type { CampaignState } from "../state/campaignState";
 import { pcPwReference } from "../rules/live";
+import { findHack, effectiveHackIp } from "../rules/catalogAccess";
 import { toneFragment } from "./tone";
 import { modePromptFragment, modeContextSlice } from "./modes";
 
@@ -81,11 +82,16 @@ When the PC does something that should have a later cost — kills someone with 
 
 At the end of a turn that meaningfully moved the story — met someone important, took or finished a gig, a big reveal, a death — add one flat line: \`delta.timelineBeat = "Met Rook. Took the Diaz gig."\` Skip it for routine beats.
 
+## Hacks (§10) — anywhere
+
+A netrunner PC can hack in normal play and in combat, without a full dive. \`request_player_roll\` with the hack's stat pair (Int+Focus routine / Int+Creativity exotic) vs the target's Firewall (§10.2: non-cybered = can't be hacked; street gang 8–12; corpo security 15–20; elite/netrunner 22–30). Each hack costs IP — take the cost from the "Known hacks" block below, subtract it via \`delta.pcIpChange\`. IP fully regenerates between fights. A traceable connection (remote) lets the target's runner attempt a trace (§10.7).
+
 ## Modes
 
 Most play is free-roaming exploration. When the pace changes, switch the ambient loop in \`commit_turn\`'s delta:
 - The PC is between jobs and wants to shop / heal / train / line up work → \`delta.mode = { enter: "downtime" }\`. A DOWNTIME section will then appear here with how to run it.
-- Downtime (or any sub-mode) is over → \`delta.mode = { exit: true }\` (back to exploration).
+- The PC deliberately jacks into a standalone architecture (a corp subnet, a security system) → call \`enter_netrun\` with the floor layout. A NETRUN section appears with how to run the dive.
+- Downtime / a dive is over → \`delta.mode = { exit: true }\` or \`delta.netrun.exit = true\` (back to exploration).
 Combat is separate — start it with \`start_combat\` as usual, from any mode.
 
 ## Ending a turn
@@ -193,6 +199,23 @@ export function buildStateContext(state: CampaignState): string {
       : undefined,
   };
 
+  // The PC's known hacks + their IP cost (post-talent-discount) — so the GM can
+  // adjudicate a hack anywhere, not just in a netrun dive.
+  let hackBlock = "";
+  const rawHacks = Array.isArray(character.hacks) ? (character.hacks as Array<{ name?: string } | string>) : [];
+  if (rawHacks.length) {
+    const talents = Array.isArray(character.talents) ? (character.talents as Array<{ name?: string; lvl?: string }>) : [];
+    const rows = rawHacks
+      .map((h) => (typeof h === "string" ? h : h?.name ?? ""))
+      .filter(Boolean)
+      .map((name) => {
+        const f = findHack(name);
+        const ip = effectiveHackIp(name, talents as never);
+        return f ? `${name} (${f.category}, IP ${ip?.effective ?? f.entry.ip}, ${f.entry.pw ?? "Int+Focus"})` : name;
+      });
+    if (rows.length) hackBlock = `\n\n# Known hacks\n${rows.join("\n")}`;
+  }
+
   let pwBlock = "";
   try {
     pwBlock = `\n\n# pcPwReference (use these for request_player_roll)\n\n\`\`\`json\n${JSON.stringify(
@@ -205,5 +228,5 @@ export function buildStateContext(state: CampaignState): string {
     // still infer PWs from the raw stats above.
   }
 
-  return `# Campaign State (source of truth)\n\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\`${pwBlock}`;
+  return `# Campaign State (source of truth)\n\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\`${hackBlock}${pwBlock}`;
 }

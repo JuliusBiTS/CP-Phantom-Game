@@ -14,6 +14,7 @@ import { matchWeaponName } from "../rules/live";
 import { autoLayoutBoard, syncBoard } from "../board/layout";
 import { critInjuryRow } from "../rules/criticalInjuries";
 import { coverHpFor } from "../rules/cover";
+import { CYBERDECK_INFO, TRACE_CAP } from "../rules/net";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -171,6 +172,21 @@ export const TurnDelta = z.object({
   mode: z
     .object({
       enter: z.enum(["exploration", "downtime", "netrun", "chase"]).optional(),
+      exit: z.boolean().optional(),
+    })
+    .optional(),
+
+  /** NET dive updates — FEATURE_PLAN.md §M7. */
+  netrun: z
+    .object({
+      move: z.number().optional(),
+      clearFloor: z.number().optional(),
+      ipChange: z.number().optional(),
+      traceChange: z.number().optional(),
+      alarmChange: z.number().optional(),
+      addDaemon: z.string().optional(),
+      removeDaemon: z.string().optional(),
+      loot: z.array(z.string()).optional(),
       exit: z.boolean().optional(),
     })
     .optional(),
@@ -566,8 +582,59 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
     if (e.clearDebtId) c.debts = (c.debts ?? []).filter((d) => d.id !== e.clearDebtId);
   }
 
+  // ── NET dive (§M7) ─────────────────────────────────────────────────────
+  if (delta.netrun) {
+    const n = s.netrun;
+    const dn = delta.netrun;
+    if (dn.exit) {
+      n.active = false;
+      if (s.mode === "netrun") s.mode = "exploration";
+      s.sessionLog.push({ ts: Date.now(), type: "system", text: `Jacked out of ${n.target || "the system"} (trace ${n.trace}, alarm ${n.alarm}).`, compressed: false });
+    } else {
+      const advanced = dn.move != null || dn.clearFloor != null;
+      if (dn.move != null) n.position = Math.max(0, Math.min(n.architecture.length - 1, Math.round(dn.move)));
+      if (dn.clearFloor != null) {
+        const f = n.architecture.find((x) => x.floor === dn.clearFloor);
+        if (f) f.cleared = true;
+      }
+      // Deck IP regen per netrun-turn + connection modifier.
+      if (advanced && c.ip_max != null) {
+        const regen = CYBERDECK_INFO[n.deck]?.ipRegen ?? 2;
+        c.ip_current = Math.min(c.ip_max, (c.ip_current ?? c.ip_max) + regen);
+      }
+      if (dn.ipChange != null && c.ip_max != null) {
+        c.ip_current = Math.max(0, Math.min(c.ip_max, (c.ip_current ?? c.ip_max) + dn.ipChange));
+      }
+      if (dn.traceChange != null) {
+        n.trace = Math.max(0, n.trace + dn.traceChange);
+        if (n.trace >= TRACE_CAP) {
+          n.trace = TRACE_CAP;
+          s.consequences.push({
+            id: `cq_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+            text: `NetWatch / ${n.target || "the system"}'s runner has your physical location — the meat body is a target`,
+            severity: "grave",
+            kind: "enemy",
+            status: "armed",
+            createdAt: Date.now(),
+          });
+          s.sessionLog.push({ ts: Date.now(), type: "system", text: "TRACE COMPLETE — full physical trace. Forced disconnect imminent.", compressed: false });
+        }
+      }
+      if (dn.alarmChange != null) n.alarm = Math.max(0, Math.min(3, n.alarm + dn.alarmChange));
+      if (dn.addDaemon && !n.daemons.includes(dn.addDaemon)) n.daemons.push(dn.addDaemon);
+      if (dn.removeDaemon) n.daemons = n.daemons.filter((d) => d !== dn.removeDaemon);
+      for (const l of dn.loot ?? []) {
+        c.inventory = [...(Array.isArray(c.inventory) ? c.inventory : []), l];
+        s.sessionLog.push({ ts: Date.now(), type: "system", text: `Netrun loot — ${l}`, compressed: false });
+      }
+    }
+  }
+
   // ── Mode + downtime clock ───────────────────────────────────────────────
-  if (delta.mode?.exit) s.mode = "exploration";
+  if (delta.mode?.exit) {
+    s.mode = "exploration";
+    if (s.netrun.active) s.netrun.active = false;
+  }
   if (delta.mode?.enter) s.mode = delta.mode.enter;
   if (delta.advanceDays && delta.advanceDays > 0) {
     s.downtime.daysElapsed += delta.advanceDays;

@@ -26,10 +26,12 @@ import {
   GenerateNpcInput,
   StartCombatInput,
   RollCriticalInjuryInput,
+  EnterNetrunInput,
 } from "./tools";
 import { rollDice } from "../dice/rollPW";
 import { resolveCritInjury } from "../rules/criticalInjuries";
 import { coverHpFor } from "../rules/cover";
+import { findIce } from "../rules/net";
 import { maybeCompress } from "./compress";
 import { addUsage } from "./cost";
 import { pushHistory } from "../state/history";
@@ -233,6 +235,48 @@ function executeCritInjury(state: CampaignState, raw: unknown): string {
   });
 }
 
+/** Execute enter_netrun: build the architecture, switch to NETRUN mode. */
+function executeEnterNetrun(state: CampaignState, raw: unknown): string {
+  const input = EnterNetrunInput.parse(raw);
+  const deck = input.deck ?? (state.netrun.deck || "Standard");
+  const architecture = input.architecture.map((f, i) => {
+    const ice = f.ice ? findIce(f.ice) : undefined;
+    return {
+      floor: i + 1,
+      name: f.name,
+      kind: f.kind,
+      ice: ice ? { name: ice.name, firewall: ice.firewall, effect: ice.effect, lethal: ice.lethal } : null,
+      loot: f.loot,
+      note: f.note,
+      cleared: false,
+    };
+  });
+  state.netrun = {
+    active: true,
+    target: input.target,
+    deck,
+    connection: input.connection,
+    trace: 0,
+    alarm: 0,
+    architecture,
+    position: 0,
+    daemons: [],
+  };
+  state.mode = "netrun";
+  state.sessionLog.push({
+    ts: Date.now(),
+    type: "system",
+    text: `Jacked into ${input.target} — ${architecture.length} floors, ${architecture.filter((f) => f.ice).length} ICE (${architecture.filter((f) => f.ice).map((f) => f.ice!.name).join(", ") || "none"}). Connection: ${input.connection}.`,
+    compressed: false,
+  });
+  return JSON.stringify({
+    ok: true,
+    deck,
+    ipRegenPerTurn: { Basic: 1, Standard: 2, Military: 3, Blackmarket: 4 }[deck],
+    architecture: architecture.map((f) => ({ floor: f.floor, name: f.name, kind: f.kind, ice: f.ice, loot: f.loot })),
+  });
+}
+
 /** Execute generate_npc: deterministic stat block, cached onto world.npcs. */
 function executeGenerateNpc(state: CampaignState, raw: unknown): string {
   const input = GenerateNpcInput.parse(raw);
@@ -266,25 +310,47 @@ function executeGenerateNpc(state: CampaignState, raw: unknown): string {
 }
 
 /**
- * Drop leading messages that would 400 the API: a `user` message with
- * `tool_result` blocks whose `tool_use` isn't in a preceding assistant message
- * (can happen if an old/partial transcript was persisted). Also drop a trailing
- * assistant `tool_use` with no following `tool_result`.
+ * Repair a transcript so the API won't 400 on it:
+ *  - drop leading `user`/tool_result messages whose `tool_use` was compressed away
+ *  - drop a trailing assistant `tool_use` with no following `tool_result`
+ *  - for every assistant tool_use, make sure the NEXT message carries a matching
+ *    tool_result — inject a synthetic one if it's missing (heals transcripts
+ *    corrupted by an earlier suspend that split the results across two messages)
  */
-function sanitizeTranscript(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
-  const hasType = (m: Anthropic.MessageParam, t: string) =>
-    Array.isArray(m.content) && m.content.some((b) => typeof b === "object" && b !== null && (b as { type?: string }).type === t);
+export function sanitizeTranscript(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const blocks = (m: Anthropic.MessageParam) => (Array.isArray(m.content) ? (m.content as Array<{ type?: string; id?: string; tool_use_id?: string }>) : []);
+  const hasType = (m: Anthropic.MessageParam, t: string) => blocks(m).some((b) => b?.type === t);
 
   let start = 0;
   while (start < messages.length && messages[start].role === "user" && hasType(messages[start], "tool_result")) {
     start++;
   }
   let out = messages.slice(start);
-  // trailing dangling tool_use
   if (out.length && out[out.length - 1].role === "assistant" && hasType(out[out.length - 1], "tool_use")) {
     out = out.slice(0, -1);
   }
-  return out;
+
+  // Heal middle orphans: every tool_use needs a tool_result in the very next message.
+  const healed: Anthropic.MessageParam[] = [];
+  for (let i = 0; i < out.length; i++) {
+    const m = out[i];
+    healed.push(m);
+    if (m.role !== "assistant") continue;
+    const toolUseIds = blocks(m).filter((b) => b?.type === "tool_use").map((b) => b.id!).filter(Boolean);
+    if (toolUseIds.length === 0) continue;
+    const next = out[i + 1];
+    const nextIsResults = next && next.role === "user" && Array.isArray(next.content) && hasType(next, "tool_result");
+    const answered = new Set(nextIsResults ? blocks(next).filter((b) => b?.type === "tool_result").map((b) => b.tool_use_id) : []);
+    const missing = toolUseIds.filter((id) => !answered.has(id));
+    if (missing.length === 0) continue;
+    const synthetic = missing.map((id) => ({ type: "tool_result" as const, tool_use_id: id, content: "(result not recorded)" }));
+    if (nextIsResults) {
+      out[i + 1] = { ...next!, content: [...(next!.content as unknown[]), ...synthetic] as never };
+    } else {
+      healed.push({ role: "user", content: synthetic as never });
+    }
+  }
+  return healed;
 }
 
 /** Add an ephemeral cache breakpoint to a message's last content block. */
@@ -445,77 +511,90 @@ async function drive(
     );
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
+    // First pass: execute every tool, giving suspend/terminal tools a synthetic
+    // result so the assistant turn is ALWAYS fully answered in one message (the
+    // API rejects an assistant message with any tool_use lacking a next-message
+    // tool_result). The real data for a suspend arrives on resume as plain text.
+    let terminal: "commit" | "playerRoll" | "combat" | null = null;
+    let committed: ReturnType<typeof parseCommitInput> | null = null;
+    let suspendTu: Anthropic.ToolUseBlock | null = null;
+    let suspendInput: unknown = null;
+
     for (const tu of toolUses) {
       const input = coerceObject(tu.input);
+      if (terminal) {
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "not run — resolve the pending step first, then call this again if still needed." });
+        continue;
+      }
       if (tu.name === TOOL_NAMES.roll) {
         const { result, roll } = executeRollDice(state, input);
         rolls.push(roll);
         onEvent?.({ type: "roll", roll });
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.generateNpc) {
-        const result = executeGenerateNpc(state, input);
-        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeGenerateNpc(state, input) });
       } else if (tu.name === TOOL_NAMES.critInjury) {
-        const result = executeCritInjury(state, input);
-        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeCritInjury(state, input) });
+      } else if (tu.name === TOOL_NAMES.enterNetrun) {
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeEnterNetrun(state, input) });
       } else if (tu.name === TOOL_NAMES.startCombat) {
-        // Push any tool results gathered so far, then suspend for PC initiative.
-        if (toolResults.length) messages.push({ role: "user", content: toolResults });
-        return executeStartCombat(state, input, tu.id, messages, narration);
+        terminal = "combat";
+        suspendTu = tu;
+        suspendInput = input;
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "Combat is being set up — the initiative order will follow in the next message." });
       } else if (tu.name === TOOL_NAMES.playerRoll) {
-        const p = RequestPlayerRollInput.parse(input);
-        // SUSPEND. Persist everything needed to resume.
-        state.pendingPlayerRoll = {
-          toolUseId: tu.id,
-          prompt: p.prompt,
-          statPair: p.statPair,
-          pw: p.pw,
-          diceInstruction: p.diceInstruction,
-          dv: p.dv,
-          kind: "action",
-        };
-        state.pendingTurnMessages = messages as unknown[];
-        state.sessionLog.push({
-          ts: Date.now(),
-          type: "system",
-          text: `Awaiting player roll: ${p.prompt} (${p.statPair}, PW ${p.pw}, ${p.diceInstruction}${p.dv != null ? `, DV ${p.dv}` : ""})`,
-          compressed: false,
-        });
-        return {
-          kind: "awaiting-player-roll",
-          state,
-          prompt: p,
-          narrationSoFar: narration,
-        };
+        terminal = "playerRoll";
+        suspendTu = tu;
+        suspendInput = input;
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "The player is rolling their physical dice now — their result will be in the next message." });
       } else if (tu.name === TOOL_NAMES.commit) {
-        const c = parseCommitInput(input);
+        terminal = "commit";
+        committed = parseCommitInput(input);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "committed" });
-        messages.push({ role: "user", content: toolResults });
-        const finalNarration = c.narration || narration;
-        state.sessionLog.push({ ts: Date.now(), type: "narration", text: finalNarration, compressed: false });
-        if (c.deltaError) {
-          state.sessionLog.push({
-            ts: Date.now(),
-            type: "system",
-            text: `Delta rejected (${c.deltaError}) — narration kept, state changes dropped. Re-state them next turn.`,
-            compressed: false,
-          });
-        }
-        let next = applyDelta(state, c.delta);
-        persistTranscript(next, messages);
-        next = await maybeCompress(next, { anthropic, model: COMPRESS_MODEL, windowTurns: TRANSCRIPT_WINDOW_TURNS });
-        return { kind: "turn-complete", state: next, narration: finalNarration, delta: c.delta, rolls };
       } else {
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: `unknown tool ${tu.name}`,
-          is_error: true,
-        });
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: `unknown tool ${tu.name}`, is_error: true });
       }
     }
 
     messages.push({ role: "user", content: toolResults });
+
+    if (terminal === "commit" && committed) {
+      const c = committed;
+      const finalNarration = c.narration || narration;
+      state.sessionLog.push({ ts: Date.now(), type: "narration", text: finalNarration, compressed: false });
+      if (c.deltaError) {
+        state.sessionLog.push({ ts: Date.now(), type: "system", text: `Delta rejected (${c.deltaError}) — narration kept, state changes dropped. Re-state them next turn.`, compressed: false });
+      }
+      let next = applyDelta(state, c.delta);
+      persistTranscript(next, messages);
+      next = await maybeCompress(next, { anthropic, model: COMPRESS_MODEL, windowTurns: TRANSCRIPT_WINDOW_TURNS });
+      return { kind: "turn-complete", state: next, narration: finalNarration, delta: c.delta, rolls };
+    }
+
+    if (terminal === "combat" && suspendTu) {
+      return executeStartCombat(state, suspendInput, suspendTu.id, messages, narration);
+    }
+
+    if (terminal === "playerRoll" && suspendTu) {
+      const p = RequestPlayerRollInput.parse(suspendInput);
+      state.pendingPlayerRoll = {
+        toolUseId: suspendTu.id,
+        prompt: p.prompt,
+        statPair: p.statPair,
+        pw: p.pw,
+        diceInstruction: p.diceInstruction,
+        dv: p.dv,
+        kind: "action",
+      };
+      state.pendingTurnMessages = messages as unknown[];
+      state.sessionLog.push({
+        ts: Date.now(),
+        type: "system",
+        text: `Awaiting player roll: ${p.prompt} (${p.statPair}, PW ${p.pw}, ${p.diceInstruction}${p.dv != null ? `, DV ${p.dv}` : ""})`,
+        compressed: false,
+      });
+      return { kind: "awaiting-player-roll", state, prompt: p, narrationSoFar: narration };
+    }
   }
 
   // Loop budget exhausted without a commit — finalize defensively.
@@ -611,13 +690,7 @@ export async function runTurn(
       ...priorMessages,
       {
         role: "user",
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: pending.toolUseId,
-            content: `Combat started. Round 1. Turn order (index → combatant):\n${orderStr}\n\nAt the top of THIS round, set combat.intents for every enemy (a short readable tell). Then resolve turns in order from index 0: roll_dice for each enemy AND each ally turn; pause via request_player_roll when it reaches the PC (or the PC gets a reaction). Keep combat.turnIndex updated, increment combat.round when the order wraps (set fresh intents each new round), set combat.removeCombatantIds for anyone who drops. If someone shoots a target's cover, use combat.coverDamage. Call commit_turn when it's the PC's turn to act (or the fight ends — then combat.end).`,
-          },
-        ],
+        content: `Player rolled initiative: [${input.dice.join(", ")}] → ${initiativeLabel(pcEntry)}.\n\nCombat started. Round 1. Turn order (index → combatant):\n${orderStr}\n\nAt the top of THIS round, set combat.intents for every enemy (a short readable tell). Then resolve turns in order from index 0: roll_dice for each enemy AND each ally turn; pause via request_player_roll when it reaches the PC (or the PC gets a reaction). Keep combat.turnIndex updated, increment combat.round when the order wraps (set fresh intents each new round), set combat.removeCombatantIds for anyone who drops. If someone shoots a target's cover, use combat.coverDamage. Call commit_turn when it's the PC's turn to act (or the fight ends — then combat.end).`,
       },
     ];
     working.pendingPlayerRoll = null;
@@ -642,21 +715,12 @@ export async function runTurn(
     },
   });
 
+  const meets = pending.dv != null ? ` (DV ${pending.dv} → ${input.total >= pending.dv ? "MEETS" : "FAILS"})` : "";
   const resumeMessages: Anthropic.MessageParam[] = [
     ...priorMessages,
     {
       role: "user",
-      content: [
-        {
-          type: "tool_result",
-          tool_use_id: pending.toolUseId,
-          content: JSON.stringify({
-            playerRolled: input.dice,
-            total: input.total,
-            ...(pending.dv != null ? { dv: pending.dv, meetsDv: input.total >= pending.dv } : {}),
-          }),
-        },
-      ],
+      content: `Player roll result for "${pending.prompt}" (${pending.statPair}, PW ${pending.pw}): dice [${input.dice.join(", ")}], total ${input.total}${meets}. Adjudicate and continue the turn.`,
     },
   ];
   working.pendingPlayerRoll = null;
