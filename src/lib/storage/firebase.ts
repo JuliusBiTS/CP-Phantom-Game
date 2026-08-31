@@ -52,13 +52,29 @@ function database(): Database {
   return db;
 }
 
-/** Force a relative solo path under `soloCampaigns/` and reject traversal. */
-function soloPath(relative: string): string {
-  const clean = relative.replace(/^\/+|\/+$/g, "");
-  if (clean.includes("..") || clean.startsWith(CP_PHANTOM_ROOT + "/") || clean === CP_PHANTOM_ROOT) {
+/**
+ * Force a relative path under `soloCampaigns/`. This is the ONLY place the solo
+ * tool constructs a writable DB ref, and it can only ever produce a path inside
+ * `soloCampaigns/` — the prefix is string-concatenated on, not checked. The
+ * guards below reject the two theoretical ways to climb out (`..` traversal,
+ * explicit re-targeting) and a final assertion refuses anything that somehow
+ * isn't under the solo root.
+ */
+export function soloPath(relative: string): string {
+  const clean = String(relative).replace(/^\/+|\/+$/g, "");
+  if (
+    clean.includes("..") ||
+    clean.startsWith(CP_PHANTOM_ROOT + "/") ||
+    clean === CP_PHANTOM_ROOT ||
+    clean.startsWith(SOLO_ROOT + "/") // don't let a caller double-prefix / smuggle a sibling
+  ) {
     throw new Error(`Refusing Firebase path outside the solo namespace: ${relative}`);
   }
-  return `${SOLO_ROOT}/${clean}`;
+  const full = `${SOLO_ROOT}/${clean}`;
+  if (full !== SOLO_ROOT && !full.startsWith(SOLO_ROOT + "/")) {
+    throw new Error(`Path assertion failed, refusing write: ${full}`);
+  }
+  return full;
 }
 
 export async function soloRead<T = unknown>(relative: string): Promise<T | null> {
