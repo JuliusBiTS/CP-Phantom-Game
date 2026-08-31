@@ -15,6 +15,7 @@ import { autoLayoutBoard, syncBoard } from "../board/layout";
 import { critInjuryRow } from "../rules/criticalInjuries";
 import { coverHpFor } from "../rules/cover";
 import { CYBERDECK_INFO, TRACE_CAP } from "../rules/net";
+import { SPUR_MIN, SPUR_MAX } from "../rules/vehicles";
 
 export const TurnDelta = z.object({
   /** HP change to the PC (negative = damage). Clamped to [0, hp_max]. */
@@ -187,6 +188,18 @@ export const TurnDelta = z.object({
       addDaemon: z.string().optional(),
       removeDaemon: z.string().optional(),
       loot: z.array(z.string()).optional(),
+      exit: z.boolean().optional(),
+    })
+    .optional(),
+
+  /** Vehicle chase updates — FEATURE_PLAN.md §M8 / §22.5. */
+  chase: z
+    .object({
+      spurChange: z.number().optional(),
+      round: z.number().optional(),
+      terrainChange: z.enum(["highway", "backstreets", "badlands", "combat-zone", "air", "water"]).optional(),
+      vehicleDamage: z.array(z.object({ id: z.string(), amount: z.number() })).optional(),
+      outcome: z.enum(["escaped", "caught", "crashed"]).optional(),
       exit: z.boolean().optional(),
     })
     .optional(),
@@ -630,10 +643,38 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
     }
   }
 
+  // ── Vehicle chase (§M8 / §22.5) ────────────────────────────────────────
+  if (delta.chase) {
+    const ch = s.chase;
+    const dc = delta.chase;
+    if (dc.terrainChange) ch.terrain = dc.terrainChange;
+    if (dc.round != null) ch.round = dc.round;
+    if (dc.spurChange != null) {
+      ch.spur = Math.max(SPUR_MIN, Math.min(SPUR_MAX, ch.spur + dc.spurChange));
+      if (ch.spur === SPUR_MAX) s.sessionLog.push({ ts: Date.now(), type: "system", text: ch.pcRole === "runner" ? "Spur 6 — you've shaken them." : "Spur 6 — you've run them down.", compressed: false });
+      if (ch.spur === SPUR_MIN) s.sessionLog.push({ ts: Date.now(), type: "system", text: "Spur 0 — a pursuer pulls alongside. This is the moment it goes loud.", compressed: false });
+    }
+    for (const vd of dc.vehicleDamage ?? []) {
+      const v = ch.vehicles.find((x) => x.id === vd.id);
+      if (!v) continue;
+      v.sdp = Math.max(0, v.sdp - Math.max(0, vd.amount));
+      if (v.sdp === 0 && !v.disabled) {
+        v.disabled = true;
+        s.sessionLog.push({ ts: Date.now(), type: "system", text: `${v.name} is wrecked — SDP 0. Occupants take collision damage (${v.speed > 20 ? "5d6" : "3d6"}).`, compressed: false });
+      }
+    }
+    if (dc.outcome || dc.exit) {
+      ch.active = false;
+      if (s.mode === "chase") s.mode = "exploration";
+      s.sessionLog.push({ ts: Date.now(), type: "system", text: `Chase over${dc.outcome ? ` — ${dc.outcome}` : ""}.`, compressed: false });
+    }
+  }
+
   // ── Mode + downtime clock ───────────────────────────────────────────────
   if (delta.mode?.exit) {
     s.mode = "exploration";
     if (s.netrun.active) s.netrun.active = false;
+    if (s.chase.active) s.chase.active = false;
   }
   if (delta.mode?.enter) s.mode = delta.mode.enter;
   if (delta.advanceDays && delta.advanceDays > 0) {

@@ -27,11 +27,14 @@ import {
   StartCombatInput,
   RollCriticalInjuryInput,
   EnterNetrunInput,
+  GenerateVehicleInput,
+  EnterChaseInput,
 } from "./tools";
 import { rollDice } from "../dice/rollPW";
 import { resolveCritInjury } from "../rules/criticalInjuries";
 import { coverHpFor } from "../rules/cover";
 import { findIce } from "../rules/net";
+import { vehicleStats, SPUR_MIN, SPUR_MAX } from "../rules/vehicles";
 import { maybeCompress } from "./compress";
 import { addUsage } from "./cost";
 import { pushHistory } from "../state/history";
@@ -275,6 +278,64 @@ function executeEnterNetrun(state: CampaignState, raw: unknown): string {
     ipRegenPerTurn: { Basic: 1, Standard: 2, Military: 3, Blackmarket: 4 }[deck],
     architecture: architecture.map((f) => ({ floor: f.floor, name: f.name, kind: f.kind, ice: f.ice, loot: f.loot })),
   });
+}
+
+/** Execute generate_vehicle: stat block from the §22.1 table, cached on world.npcs. */
+function executeGenerateVehicle(state: CampaignState, raw: unknown): string {
+  const input = GenerateVehicleInput.parse(raw);
+  const stats = vehicleStats(input.template, input.bodyClass ? { bodyClass: input.bodyClass } : undefined);
+  const sheet = {
+    name: input.name,
+    isVehicle: true,
+    hp_max: stats.sdp,
+    hp_current: stats.sdp,
+    armor_body: stats.bodySp,
+    notes: input.note,
+    _generated: { template: stats.template, kind: stats.kind, seats: stats.seats, speed: stats.speed, bodySp: stats.bodySp },
+  };
+  let npc = state.world.npcs.find((n) => n.id === input.id);
+  if (!npc) {
+    npc = { id: input.id, name: input.name, disposition: "neutral", status: "alive", notableFacts: [] };
+    state.world.npcs.push(npc);
+  }
+  npc.name = input.name;
+  npc.sheet = sheet as never;
+  state.sessionLog.push({ ts: Date.now(), type: "system", text: `Vehicle ${input.name} — ${stats.name}, SDP ${stats.sdp}, body-SP ${stats.bodySp}, ${stats.seats} seats, combat speed ${stats.speed}.`, compressed: false });
+  return JSON.stringify({ ...stats, sdpMax: stats.sdp });
+}
+
+/** Execute enter_chase: set up the Spur + vehicles, switch to CHASE mode. */
+function executeEnterChase(state: CampaignState, raw: unknown): string {
+  const input = EnterChaseInput.parse(raw);
+  const vehicles = input.vehicles.map((v) => {
+    const s = vehicleStats(v.template, v.bodyClass ? { bodyClass: v.bodyClass } : undefined);
+    return {
+      id: v.id,
+      name: v.name,
+      template: s.template,
+      role: v.role,
+      sdp: s.sdp,
+      sdpMax: s.sdp,
+      bodySp: s.bodySp,
+      speed: s.speed,
+      seats: s.seats,
+      occupants: v.occupants ?? [],
+      driver: v.driver,
+      disabled: false,
+    };
+  });
+  state.chase = {
+    active: true,
+    spur: input.startSpur ?? 2,
+    round: 1,
+    terrain: input.terrain,
+    pcRole: input.pcRole,
+    pursuerTier: input.pursuerTier,
+    vehicles,
+  };
+  state.mode = "chase";
+  state.sessionLog.push({ ts: Date.now(), type: "system", text: `Chase — ${input.terrain}, PC is ${input.pcRole}. Spur ${state.chase.spur}/${SPUR_MAX}. ${vehicles.length} vehicles.`, compressed: false });
+  return JSON.stringify({ spur: state.chase.spur, spurRange: [SPUR_MIN, SPUR_MAX], chaseDv: input.pursuerTier === "elite" ? 17 : 14, vehicles });
 }
 
 /** Execute generate_npc: deterministic stat block, cached onto world.npcs. */
@@ -537,6 +598,10 @@ async function drive(
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeCritInjury(state, input) });
       } else if (tu.name === TOOL_NAMES.enterNetrun) {
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeEnterNetrun(state, input) });
+      } else if (tu.name === TOOL_NAMES.generateVehicle) {
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeGenerateVehicle(state, input) });
+      } else if (tu.name === TOOL_NAMES.enterChase) {
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: executeEnterChase(state, input) });
       } else if (tu.name === TOOL_NAMES.startCombat) {
         terminal = "combat";
         suspendTu = tu;

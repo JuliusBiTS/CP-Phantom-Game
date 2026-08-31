@@ -408,6 +408,18 @@ greyed once used); armed watches show on the tracker.
 The biggest missing subsystem. Netrunners are ~1/7 of the archetypes and the NET is a real
 place in §10, not a die roll.
 
+> **Built 2026-09-01.** v12's §10 is combat-hacking (firewall + IP + trace + duels), not a
+> floor-crawl — so this is a hybrid: hacks work anywhere (prompt section + a "Known hacks"
+> context block: name/category/IP/PW), and a deliberate dive is a light sub-mode.
+> `lib/rules/net.ts` (ICE_CATALOG ×6, CYBERDECK_INFO, ALARM_LEVELS, firewall bands, TRACE_CAP).
+> `state.netrun` (architecture floors, deck, connection, trace 0–100, alarm 0–3, position,
+> daemons; IP stays on the sheet). `enter_netrun` tool: GM gives floor concept + ICE names,
+> backend fills ICE stats + switches mode. `delta.netrun {move,clearFloor,ipChange,traceChange,
+> alarmChange,addDaemon,loot,exit}` — moving a floor auto-regens deck IP; trace 100 → grave
+> consequence + forced disconnect. `NetrunView` (floor stack, IP bar, trace gauge, alarm),
+> netrun QuickActions chips. **No rigid ICE-combat engine** — the GM narrates ICE attacks via
+> `roll_dice`.
+
 **Data.**
 ```
 state.netrun: {
@@ -486,6 +498,15 @@ abstract chase), §22a (military vehicles/mechs). Port `VEHICLE_TEMPLATES`, `VEH
 **UI.** A `ChaseView`: two lanes of vehicle tokens with the gap between them as a widening/
 narrowing bar, terrain banner, each vehicle's SDP/SP as pips, manoeuvre chips (Push it / Ram /
 Hard turn / Shake them / Trade paint / Bail). Speed-line motion.
+
+> **Built 2026-09-01.** Implemented v12's §22.5 abstract chase (the "Spur" 0–6, not a gap bar).
+> `lib/rules/vehicles.ts` (VEHICLE_TEMPLATES ×11 from §22.1, BODY_SP classes, chaseDv,
+> collisionDamageDice). `state.chase` (spur, round, terrain, pcRole runner|pursuer, pursuerTier,
+> vehicles[] with SDP/body-SP/speed/occupants). `generate_vehicle` (stat block, cached on
+> world.npcs like an NPC) + `enter_chase` tools. `delta.chase {spurChange,round,terrainChange,
+> vehicleDamage,outcome,exit}` — spur clamps 0–6 and logs the endpoints, 0 SDP disables a
+> vehicle + notes collision damage. `ChaseView` (spur track, per-vehicle SDP bars), chase
+> QuickActions chips. A stationary vehicle shoot-out is just `start_combat` with the vehicles.
 
 ---
 

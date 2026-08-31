@@ -344,6 +344,36 @@ export const NetArchFloor = z.object({
   cleared: z.boolean().default(false),
 });
 
+/** Vehicle chase — FEATURE_PLAN.md §M8 / rulebook §22.5. Active while
+ *  `mode === "chase"`. */
+export const ChaseVehicle = z.object({
+  id: z.string(),
+  name: z.string(),
+  template: z.string().default(""),
+  role: z.enum(["pc", "ally", "pursuer", "quarry"]).default("pursuer"),
+  sdp: z.number(),
+  sdpMax: z.number(),
+  bodySp: z.number().default(13),
+  speed: z.number().default(20),
+  seats: z.number().default(4),
+  occupants: z.array(z.string()).default([]),
+  driver: z.string().optional(),
+  disabled: z.boolean().default(false),
+});
+
+export const Chase = z.object({
+  active: z.boolean().default(false),
+  /** §22.5 "Spur" — 0 (pursuer alongside → set-piece) … 6 (shaken / caught). */
+  spur: z.number().default(2),
+  round: z.number().default(1),
+  terrain: z.enum(["highway", "backstreets", "badlands", "combat-zone", "air", "water"]).default("backstreets"),
+  /** Is the PC running (spur 6 = escaped) or chasing (spur 6 = caught them)? */
+  pcRole: z.enum(["runner", "pursuer"]).default("runner"),
+  pursuerTier: z.enum(["standard", "elite"]).default("standard"),
+  vehicles: z.array(ChaseVehicle).default([]),
+});
+export type Chase = z.infer<typeof Chase>;
+
 export const Netrun = z.object({
   active: z.boolean().default(false),
   target: z.string().default(""),
@@ -393,6 +423,7 @@ export const CampaignState = z.object({
   mode: Mode.default("exploration"),
   downtime: Downtime.default({ daysElapsed: 0 }),
   netrun: Netrun.default({ active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] }),
+  chase: Chase.default({ active: false, spur: 2, round: 1, terrain: "backstreets", pcRole: "runner", pursuerTier: "standard", vehicles: [] }),
   consequences: z.array(Consequence).default([]),
   timeline: z.array(TimelineBeat).default([]),
   sessionLog: z.array(SessionLogEntry).default([]),
@@ -460,6 +491,7 @@ export function newCampaignState(args: {
     mode: "exploration",
     downtime: { daysElapsed: 0 },
     netrun: { active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] },
+    chase: { active: false, spur: 2, round: 1, terrain: "backstreets", pcRole: "runner", pursuerTier: "standard", vehicles: [] },
     consequences: [],
     timeline: [],
     sessionLog: [],

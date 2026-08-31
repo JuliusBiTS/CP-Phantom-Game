@@ -29,7 +29,39 @@ export const TOOL_NAMES = {
   startCombat: "start_combat",
   critInjury: "roll_critical_injury",
   enterNetrun: "enter_netrun",
+  generateVehicle: "generate_vehicle",
+  enterChase: "enter_chase",
 } as const;
+
+export const GenerateVehicleInput = z.object({
+  id: z.string().describe("Stable slug, e.g. 'militech-suv'."),
+  name: z.string(),
+  template: z
+    .string()
+    .describe("Base type: roadbike / superbike / compact / sportscar / supercar / van / apc / av4 / military-av / jetski / speedboat. The backend fills SDP / seats / speed / body-SP."),
+  bodyClass: z.enum(["light", "standard", "armored"]).optional().describe("Override armour class if it's up-armoured / stripped."),
+  note: z.string().optional(),
+});
+
+export const EnterChaseInput = z.object({
+  terrain: z.enum(["highway", "backstreets", "badlands", "combat-zone", "air", "water"]).default("backstreets"),
+  pcRole: z.enum(["runner", "pursuer"]).describe("Is the PC fleeing, or doing the chasing?"),
+  pursuerTier: z.enum(["standard", "elite"]).default("standard"),
+  startSpur: z.number().optional().describe("Default 2. Shift for a head start / a bad spot."),
+  vehicles: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        template: z.string(),
+        role: z.enum(["pc", "ally", "pursuer", "quarry"]),
+        bodyClass: z.enum(["light", "standard", "armored"]).optional(),
+        driver: z.string().optional(),
+        occupants: z.array(z.string()).default([]),
+      }),
+    )
+    .describe("Every vehicle in the chase, including the PC's."),
+});
 
 export const EnterNetrunInput = z.object({
   target: z.string().describe("What the PC is diving, e.g. 'the Konpeki floor-42 subnet'."),
@@ -168,6 +200,18 @@ export const TURN_TOOLS: Anthropic.Tool[] = [
     description:
       "The PC jacks into an architecture. You provide the concept — floors + which are guarded by named ICE; the backend fills in ICE Firewall/effect from the §25 catalog and switches to NETRUN mode. Use for a deliberate dive of a standalone system (a corp subnet, a security architecture). One-off combat hacks against a person don't need this — just request_player_roll vs their Firewall.",
     input_schema: toInputSchema(EnterNetrunInput),
+  },
+  {
+    name: TOOL_NAMES.generateVehicle,
+    description:
+      "Get a real stat block for a vehicle (§22.1) before it matters mechanically. You pick the base template + name; the backend fills SDP / seats / combat-speed / body-SP. Cached on world.npcs[id] like an NPC.",
+    input_schema: toInputSchema(GenerateVehicleInput),
+  },
+  {
+    name: TOOL_NAMES.enterChase,
+    description:
+      "Start an abstract vehicle chase (§22.5). Provide the terrain, whether the PC is running or chasing, and every vehicle. The backend sets up the Spur (0–6, starts at 2) and switches to CHASE mode.",
+    input_schema: toInputSchema(EnterChaseInput),
     // Cache breakpoint: system + all tool schemas are re-sent every model call
     // (several per turn in combat) and never change — cache the whole prefix.
     cache_control: { type: "ephemeral" },

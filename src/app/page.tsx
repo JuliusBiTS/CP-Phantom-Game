@@ -27,6 +27,7 @@ import { runTurnStream, StreamUnavailable } from "@/lib/llm/streamClient";
 import { ToneEditor } from "@/components/ToneEditor";
 import { DowntimePanel } from "@/components/DowntimePanel";
 import { NetrunView } from "@/components/NetrunView";
+import { ChaseView } from "@/components/ChaseView";
 import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
@@ -529,6 +530,14 @@ export default function Home() {
             />
           )}
 
+          {state.mode === "chase" && state.chase.active && (
+            <ChaseView
+              state={state}
+              busy={busy}
+              onExit={() => sendTurn({ kind: "action", text: "I break off the chase." })}
+            />
+          )}
+
           {state.mode === "downtime" && !combat?.active && (
             <DowntimePanel
               state={state}
@@ -681,6 +690,8 @@ export default function Home() {
                   ? "Downtime — what do you take care of?"
                   : state.mode === "netrun"
                   ? "In the NET — what's your move?"
+                  : state.mode === "chase"
+                  ? "Chase — what's the play?"
                   : "What do you do?"}
               </h2>
               {!combat?.active && state.suggestedActions.length > 0 && (

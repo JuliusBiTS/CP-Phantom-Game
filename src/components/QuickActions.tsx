@@ -18,6 +18,17 @@ const NETRUN_CHIPS: Array<[string, string]> = [
   ["Jack out", "I jack out."],
 ];
 
+const CHASE_CHIPS: Array<[string, string]> = [
+  ["Push it", "I floor it and try to open the gap — "],
+  ["Hard turn", "I cut down a side street to break their line of sight — "],
+  ["Trade paint", "I sideswipe the nearest pursuer."],
+  ["Ram", "I ram the "],
+  ["Shoot the driver", "I lean out and shoot at the lead pursuer's driver."],
+  ["Shoot the vehicle", "I put rounds into the lead pursuer's vehicle."],
+  ["Make an obstacle", "I "],
+  ["Break off", "I break off the chase."],
+];
+
 const DOWNTIME_CHIPS: Array<[string, string]> = [
   ["Shop", "I hit up a fixer / vendor to buy gear — "],
   ["Ripperdoc", "I go see my ripperdoc — "],
@@ -44,6 +55,7 @@ export function QuickActions({
   const inCombat = !!combat?.active;
   const inDowntime = !inCombat && mode === "downtime";
   const inNetrun = !inCombat && mode === "netrun";
+  const inChase = !inCombat && mode === "chase";
   const targets = (combat?.order ?? []).filter((o) => !o.isPC);
   const targetName =
     targets.find((t) => t.id === combat?.pcTargetId)?.name ?? targets[0]?.name ?? "the nearest enemy";
@@ -51,6 +63,8 @@ export function QuickActions({
 
   const chips: Array<[string, string]> = inNetrun
     ? NETRUN_CHIPS
+    : inChase
+    ? CHASE_CHIPS
     : inDowntime
     ? DOWNTIME_CHIPS
     : inCombat
@@ -82,7 +96,7 @@ export function QuickActions({
         <button
           key={label}
           onClick={() => onPick(text)}
-          style={{ padding: "3px 9px", fontSize: 10, borderColor: inCombat ? "var(--red)" : inDowntime ? "var(--gold)" : inNetrun ? "var(--cyan-dim)" : "var(--border2)" }}
+          style={{ padding: "3px 9px", fontSize: 10, borderColor: inCombat ? "var(--red)" : inDowntime || inChase ? "var(--gold)" : inNetrun ? "var(--cyan-dim)" : "var(--border2)" }}
         >
           {label}
         </button>

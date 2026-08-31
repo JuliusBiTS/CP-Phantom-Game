@@ -91,7 +91,8 @@ A netrunner PC can hack in normal play and in combat, without a full dive. \`req
 Most play is free-roaming exploration. When the pace changes, switch the ambient loop in \`commit_turn\`'s delta:
 - The PC is between jobs and wants to shop / heal / train / line up work → \`delta.mode = { enter: "downtime" }\`. A DOWNTIME section will then appear here with how to run it.
 - The PC deliberately jacks into a standalone architecture (a corp subnet, a security system) → call \`enter_netrun\` with the floor layout. A NETRUN section appears with how to run the dive.
-- Downtime / a dive is over → \`delta.mode = { exit: true }\` or \`delta.netrun.exit = true\` (back to exploration).
+- A vehicle chase over distance (flee / shake / run down) → \`enter_chase\`. A CHASE section appears. (A stationary shoot-out between vehicles is just \`start_combat\` with the vehicles as combatants — generate them with \`generate_vehicle\`.)
+- Downtime / a dive / a chase is over → \`delta.mode = { exit: true }\` or the sub-mode's own \`exit\` (\`delta.netrun.exit\`, \`delta.chase.exit\`).
 Combat is separate — start it with \`start_combat\` as usual, from any mode.
 
 ## Ending a turn
