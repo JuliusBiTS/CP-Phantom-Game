@@ -183,6 +183,16 @@ catalog cost tiers. When the player starts a new gig or a fight breaks out, exit
 
 ---
 
+> **Cost pass done 2026-09-01** (before M4). Per-turn input was ~32k tokens, barely
+> cached. Fixes: `stripStaleContext` drops the state-context blob from stored transcript
+> messages after each turn (was growing O(n²)); `cache_control` breakpoints on the tool
+> block + transcript prefix; campaign bible moved into the cached system prompt;
+> fact-compression + recap + world-tick run on `claude-haiku-4-5` (`SOLO_COMPRESS_MODEL` /
+> `SOLO_RECAP_MODEL` / `SOLO_WORLDTICK_MODEL`). The cost meter still doesn't count
+> background (Haiku) calls — minor undercount that roughly offsets.
+
+---
+
 ## M4 — Aftermath systems  ·  L  ·  depends: M3 (shares the Downtime surface)
 
 All four plug into normal play (the GM applies them via delta) AND Downtime (where you treat
@@ -235,6 +245,16 @@ overdue = a consequence (M5)."
 **UI.** Eddies + lifestyle tier on the HUD; a Finances section on the sheet (debts, rent
 countdown). Debts also surface on the Mission Board as `?`-leads / consequences (M5).
 **Rules.** §23.2, §23.3.
+
+> **Built 2026-09-01.** `lib/rules/criticalInjuries.ts` (both §13 2d6 tables + "next row
+> down" + surgery cost); `roll_critical_injury` tool (CSPRNG 2d6, records on target,
+> returns row + the +5 HP for the model). `character.criticalInjuries` / `deathSavePenalty`;
+> `delta.pcCriticalInjury {treatId,to}`. Wound recovery: `advanceDays` in downtime = full
+> rest (HP/stamina restored, injuries persist). `delta.installCyberware {name,humanityLoss}`
+> (appends chrome, drops Humanity) + `humanityBand()` (§21.4). Economy: `character.lifestyle`
+> + `debts`; `delta.economy {eddieChange,setLifestyle,addDebt,clearDebtId}`; rent auto-deducts
+> every 30 in-game days. UI: VitalsHud Humanity band + injury line; CharacterSheet lists
+> injuries + debts.
 
 ---
 
@@ -303,6 +323,16 @@ page (mission + date), one section per window (dossiers, objectives, locations, 
 notes, connections list, timeline), redactions kept as █████. `window.print()` → the user's
 browser handles PDF. No server, no deps.
 
+> **Built 2026-09-01.** `state.consequences[]` + `delta.consequences {add,resolveId,
+> escalateId}` (armed ones ride in the per-turn context); `state.timeline[]` +
+> `delta.timelineBeat`, surfaced as a transcript-view filter. MissionBoard: 🔗 Link mode
+> (click two windows), deletable/labelled links, `connections` window is now a circular
+> relationship graph. `character.portrait` / `WorldNpc.portrait` (data URLs, `lib/util/image.ts`
+> downscales to 256px); `PortraitUpload` on VitalsHud + dossier windows. `CaseFile` +
+> `@media print` + "Case file" button (redactions preserved). `POST /api/world-tick` (Haiku):
+> "⟳ Let the city move" in DowntimePanel (campaign mode) → GM advances the world → delta +
+> "while you were dark" recap card.
+
 ---
 
 ## M6 — Combat depth  ·  M  ·  extends structured combat
@@ -361,6 +391,15 @@ resolves."
 **UI.** A "⚡ Flink" / "Overwatch" button in the combat quick actions when available (Flink
 greyed once used); armed watches show on the tracker.
 **Rules.** §4 (all), §7.4–7.6, the Tactician/Sniper talent trees in the catalog.
+
+> **Built 2026-09-01.** `CombatCombatant` gains `role` / `zoneId` / `intent`; `Combat` gains
+> `zones` / `overwatch` / `flinkUsed`. `start_combat` takes `combatants[].role`, `zones`,
+> `pcZoneId`, per-combatant `coverMaterial`. `delta.combat` gains `intents` / `zones` / `moves`
+> / `setCover` / `coverDamage` / `overwatch{set,clearIds}` / `flinkUsed`; `end` clears the lot.
+> `lib/rules/cover.ts` (§18.2 material table). CombatTracker: zone mini-grid with role-coloured
+> dots, amber intent line, cover-HP pip, green allies, overwatch/flink status. `QuickActions`
+> gains ⚡ Flink / Overwatch / Shoot the cover. Zone→range still flows through `rangeFromPcM`
+> (the GM keeps it in sync) — no auto distance calc yet.
 
 ---
 
