@@ -369,4 +369,13 @@ A new chat should ask these, not assume:
 
 **Phase 3 — Polish.** Full visual design pass matching CP Phantom's system (Section 7), a boot-sequence intro, an embedded lightweight combat-tracker view for real fights (reusing CP Phantom's wound-state/PW display components rather than resolving combat purely through prose, since combat is exactly where "did HP actually track correctly" matters most), optional local-Whisper dictation upgrade (Section 5.2a), general UX polish.
 
+> **Phase 3 build status (2026-08-31): core done, 68 tests green.**
+> - **Design skin** — pulled forward in Phase 2: CP Phantom's `:root` tokens verbatim, Bahnschrift + Cascadia Code, dark HUD-grid, panels.
+> - **Boot sequence** (`BootSequence.tsx`) — ported from `startBootSequence`: typewriter terminal → glitch → glitched wordmark. Gated once per tab session, skippable, `prefers-reduced-motion`-aware, 13s hard cap.
+> - **Corner-bracket reticle** (`.reticle`) — the one "matters-now" frame, on the pending-PC-roll panel.
+> - **Firefox / Safari dictation** — `lib/whisper/` runs Whisper (transformers.js, `whisper-tiny.en`, ~40 MB one-time) in a Web Worker, entirely in-browser, no key. `DictationButton` auto-picks Web Speech API (Chrome/Edge) vs local Whisper; `localStorage.cpph_dictation="whisper"` forces local. The full record→transcribe round-trip still needs a real Firefox to confirm.
+> - **Combat tracker** (`CombatTracker.tsx` + `lib/rules/combatant.ts`) — a card grid (CP Phantom combat-card style) showing every combatant's live HP bar / wound badge / armor SP / weapon PW, computed with the same ported math. Appears when the world has an alive NPC with a cached sheet.
+>
+> **The full user playtest against the live Anthropic API is the only thing left before calling the whole build done.**
+
 Test with the real user between every phase — don't build all three before he's touched anything.
