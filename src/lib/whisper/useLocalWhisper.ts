@@ -41,6 +41,7 @@ async function blobTo16kMono(blob: Blob): Promise<Float32Array> {
 export function useLocalWhisper(onText: (text: string) => void) {
   const [status, setStatus] = useState<WhisperStatus>("idle");
   const [progress, setProgress] = useState(0);
+  const [modelLabel, setModelLabel] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
@@ -57,10 +58,11 @@ export function useLocalWhisper(onText: (text: string) => void) {
     if (workerRef.current) return workerRef.current;
     const w = new Worker(new URL("./worker.ts", import.meta.url));
     w.onmessage = (e: MessageEvent) => {
-      const d = e.data as { type: string; pct?: number; text?: string; message?: string };
+      const d = e.data as { type: string; pct?: number; label?: string; text?: string; message?: string };
       if (d.type === "progress") {
         setStatus("loading-model");
         setProgress(d.pct ?? 0);
+        if (d.label) setModelLabel(d.label);
       } else if (d.type === "ready") {
         setStatus((s) => (s === "loading-model" || s === "idle" ? "ready" : s));
       } else if (d.type === "result") {
@@ -144,5 +146,5 @@ export function useLocalWhisper(onText: (text: string) => void) {
     }
   }, []);
 
-  return { status, progress, errorMsg, startRecording, stopRecording };
+  return { status, progress, modelLabel, errorMsg, startRecording, stopRecording };
 }

@@ -1,54 +1,61 @@
 /**
  * Local Whisper worker — SOLO_MODE_BUILD_PLAN.md §5.2a Phase 3 upgrade.
  *
- * Runs OpenAI Whisper entirely in the browser via transformers.js (WebGPU if
- * available, else WASM). No API key, no server, works in Firefox (which has no
- * Web Speech API). The model (~40 MB, whisper-tiny.en) downloads once on first
- * use and is cached by the browser.
+ * Runs OpenAI Whisper entirely in the browser via transformers.js on the WASM
+ * backend. No API key, no server; works in Firefox (which has no Web Speech
+ * API). The model downloads once on first use and is cached by the browser.
  *
  * Messages in:  { type: "load" } | { type: "transcribe", audio: Float32Array }
- * Messages out: { type: "progress", pct } | { type: "ready" }
+ * Messages out: { type: "progress", pct, label } | { type: "ready" }
  *             | { type: "result", text } | { type: "error", message }
  */
 
 import { pipeline, env, type AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 
 env.allowLocalModels = false;
+// Single-threaded WASM: multi-threaded needs COOP/COEP cross-origin isolation
+// headers we don't set, and threaded init fails without them.
+try {
+  const wasm = env.backends?.onnx?.wasm;
+  if (wasm) wasm.numThreads = 1;
+} catch {
+  /* older builds */
+}
 
 const MODEL_ID = "Xenova/whisper-tiny.en";
 
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 
 /**
- * Load order tries the smallest working weights first. The default auto-pick
- * grabs a 4-bit (`MatMulNBits`) variant that ONNX Runtime Web can't load in
- * Firefox ("Missing required scale"), so we pin the dtype and force WASM
- * (Firefox has no stable WebGPU anyway).
+ * Load order. The default auto-pick and the int8/`q8` decoder variant both hit
+ * an ONNX Runtime Web bug ("Missing required scale … TransposeDQWeightsForMatMulNBits")
+ * on some Whisper exports, so we try unquantised weights first and also disable
+ * the extended graph optimisation that trips on quantised MatMul.
  */
-const ATTEMPTS: Array<{ dtype: "q8" | "fp16" | "fp32"; label: string }> = [
-  { dtype: "q8", label: "int8 (~40 MB)" },
+const ATTEMPTS: Array<{ dtype: "fp16" | "fp32" | "q8"; label: string }> = [
+  { dtype: "fp16", label: "half precision (~78 MB)" },
   { dtype: "fp32", label: "full precision (~150 MB)" },
+  { dtype: "q8", label: "int8 (~40 MB)" },
 ];
 
 async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
   let lastErr: unknown;
   for (const attempt of ATTEMPTS) {
     try {
+      self.postMessage({ type: "progress", pct: 0, label: attempt.label });
       return (await pipeline("automatic-speech-recognition", MODEL_ID, {
         dtype: { encoder_model: attempt.dtype, decoder_model_merged: attempt.dtype },
         device: "wasm",
+        session_options: { graphOptimizationLevel: "basic" },
         progress_callback: (p: unknown) => {
           const prog = p as { status?: string; progress?: number };
           if (prog.status === "progress" && typeof prog.progress === "number") {
-            self.postMessage({ type: "progress", pct: Math.round(prog.progress) });
-          } else if (prog.status === "ready") {
-            self.postMessage({ type: "ready" });
+            self.postMessage({ type: "progress", pct: Math.round(prog.progress), label: attempt.label });
           }
         },
       })) as AutomaticSpeechRecognitionPipeline;
     } catch (err) {
       lastErr = err;
-      self.postMessage({ type: "progress", pct: 0 });
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));

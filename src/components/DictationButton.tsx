@@ -182,12 +182,12 @@ function WebSpeechDictation({ onFinalText, onInterimText, lang = "en-US" }: Prop
 // ── Local Whisper path (Firefox / Safari desktop) ─────────────────────────
 
 function WhisperDictation({ onFinalText }: { onFinalText: (t: string) => void }) {
-  const { status, progress, errorMsg, startRecording, stopRecording } = useLocalWhisper(onFinalText);
+  const { status, progress, modelLabel, errorMsg, startRecording, stopRecording } = useLocalWhisper(onFinalText);
   const recording = status === "recording";
 
   const label =
     status === "loading-model"
-      ? `loading model ${progress}%`
+      ? `downloading ${modelLabel ?? "model"} — ${progress}%`
       : status === "transcribing"
         ? "transcribing…"
         : status === "recording"

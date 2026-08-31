@@ -1,8 +1,7 @@
-/* eslint-disable */
 /**
  * CP Phantom rules catalogs — copied VERBATIM from index.html's object literals
  * (2026-08-31). Pure data, no code. These change rarely; if CP Phantom's
- * catalogs are updated, re-run scripts/extract_catalogs to resync.
+ * catalogs are updated, re-run `node scripts/extract-catalogs.cjs`.cjs to resync.
  * Source of truth for talent/technique/hack/cyberware/attachment/consumable
  * mechanics — SOLO_MODE_BUILD_PLAN.md §3.1 / §8.1.
  */
