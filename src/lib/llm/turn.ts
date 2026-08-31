@@ -14,8 +14,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { CampaignState } from "../state/campaignState";
-import type { TurnDelta } from "../state/delta";
-import { applyDelta } from "../state/delta";
+import { applyDelta, TurnDelta } from "../state/delta";
 import { rollPW, meleeOrRangedDamage } from "../dice/rollPW";
 import { buildSystemPrompt, buildStateContext } from "./prompt";
 import {
@@ -80,6 +79,34 @@ export type TurnEventSink = (ev: TurnEvent) => void;
 
 function client() {
   return new Anthropic(); // resolves ANTHROPIC_API_KEY / auth profile from env
+}
+
+/** Models occasionally hand back tool input (or a nested object field) as a
+ *  JSON *string* instead of an object. Unwrap one level of that. */
+export function coerceObject(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const t = v.trim();
+  if (!t.startsWith("{") && !t.startsWith("[")) return v;
+  try {
+    return JSON.parse(t);
+  } catch {
+    return v;
+  }
+}
+
+/** Tolerant commit_turn parse — a malformed delta downgrades to an empty delta
+ *  (with a log note) rather than 500-ing the whole turn. */
+export function parseCommitInput(raw: unknown): { narration: string; delta: TurnDelta; deltaError?: string } {
+  const o = (coerceObject(raw) ?? {}) as Record<string, unknown>;
+  const narration = typeof o.narration === "string" ? o.narration : "";
+  const parsed = CommitTurnInput.safeParse({ narration, delta: coerceObject(o.delta) ?? {} });
+  if (parsed.success) return { narration: parsed.data.narration, delta: parsed.data.delta };
+  const deltaOnly = TurnDelta.safeParse(coerceObject(o.delta) ?? {});
+  return {
+    narration,
+    delta: deltaOnly.success ? deltaOnly.data : {},
+    deltaError: JSON.stringify(parsed.error.issues.slice(0, 3)),
+  };
 }
 
 function textOf(content: Anthropic.ContentBlock[]): string {
@@ -332,20 +359,21 @@ async function drive(
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const tu of toolUses) {
+      const input = coerceObject(tu.input);
       if (tu.name === TOOL_NAMES.roll) {
-        const { result, roll } = executeRollDice(state, tu.input);
+        const { result, roll } = executeRollDice(state, input);
         rolls.push(roll);
         onEvent?.({ type: "roll", roll });
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.generateNpc) {
-        const result = executeGenerateNpc(state, tu.input);
+        const result = executeGenerateNpc(state, input);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
       } else if (tu.name === TOOL_NAMES.startCombat) {
         // Push any tool results gathered so far, then suspend for PC initiative.
         if (toolResults.length) messages.push({ role: "user", content: toolResults });
-        return executeStartCombat(state, tu.input, tu.id, messages, narration);
+        return executeStartCombat(state, input, tu.id, messages, narration);
       } else if (tu.name === TOOL_NAMES.playerRoll) {
-        const p = RequestPlayerRollInput.parse(tu.input);
+        const p = RequestPlayerRollInput.parse(input);
         // SUSPEND. Persist everything needed to resume.
         state.pendingPlayerRoll = {
           toolUseId: tu.id,
@@ -370,11 +398,19 @@ async function drive(
           narrationSoFar: narration,
         };
       } else if (tu.name === TOOL_NAMES.commit) {
-        const c = CommitTurnInput.parse(tu.input);
+        const c = parseCommitInput(input);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "committed" });
         messages.push({ role: "user", content: toolResults });
         const finalNarration = c.narration || narration;
         state.sessionLog.push({ ts: Date.now(), type: "narration", text: finalNarration, compressed: false });
+        if (c.deltaError) {
+          state.sessionLog.push({
+            ts: Date.now(),
+            type: "system",
+            text: `Delta rejected (${c.deltaError}) — narration kept, state changes dropped. Re-state them next turn.`,
+            compressed: false,
+          });
+        }
         let next = applyDelta(state, c.delta);
         persistTranscript(next, messages);
         next = await maybeCompress(next, { anthropic, model: MODEL, windowTurns: TRANSCRIPT_WINDOW_TURNS });
