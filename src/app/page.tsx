@@ -10,12 +10,15 @@ import { useEffect, useMemo, useState } from "react";
 import { CampaignState, newCampaignState, CharacterSheet, type CampaignBible } from "@/lib/state/campaignState";
 import { getStore } from "@/lib/storage/store";
 import { pwDiceCaps } from "@/lib/dice/rollPW";
-import { pcPwReference } from "@/lib/rules/live";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
 import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
 import { DictationButton } from "@/components/DictationButton";
 import { LifePathWizard } from "@/components/LifePathWizard";
 import { CombatTracker } from "@/components/CombatTracker";
+import { VitalsHud } from "@/components/VitalsHud";
+import { CharacterSheet as CharacterSheetPanel } from "@/components/CharacterSheet";
+
+type CharacterSheetType = CharacterSheet;
 
 type TurnResult =
   | { kind: "awaiting-player-roll"; state: CampaignState; prompt: PlayerRollPrompt; narrationSoFar: string }
@@ -52,15 +55,38 @@ export default function Home() {
   const [rollInput, setRollInput] = useState("");
   const [pending, setPending] = useState<PlayerRollPrompt | null>(null);
   const [lastRolls, setLastRolls] = useState<EngineRoll[]>([]);
+  const [showSheet, setShowSheet] = useState(false);
 
   useEffect(() => {
     store.list().then(setCampaigns).catch(() => {});
   }, [store]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "c" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
+      setShowSheet((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   async function persist(s: CampaignState) {
     setState(s);
     await store.save(s);
     setCampaigns(await store.list());
+  }
+
+  function patchCharacter(mut: (c: CharacterSheetType) => void) {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next: CampaignState = structuredClone(prev);
+      mut(next.character);
+      next.meta.lastPlayedAt = Date.now();
+      void store.save(next);
+      return next;
+    });
   }
 
   async function onCreated(s: CampaignState) {
@@ -175,9 +201,6 @@ export default function Home() {
   }
 
   const c = state?.character;
-  const woundPct = c?.hp_max && c.hp_current != null ? c.hp_current / c.hp_max : 1;
-  const wound =
-    woundPct <= 0.1 ? "FLATLINING" : woundPct <= 0.25 ? "CRITICALLY WOUNDED" : woundPct <= 0.5 ? "SERIOUSLY WOUNDED" : null;
 
   return (
     <main style={{ maxWidth: 940, margin: "0 auto", padding: "28px 20px 80px" }}>
@@ -234,89 +257,28 @@ export default function Home() {
 
       {!showNew && state && c && (
         <>
-          <section className="panel">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-              <strong style={{ fontFamily: "var(--font-display)", fontSize: 15, letterSpacing: "0.05em" }}>
-                {c.name}
-              </strong>
-              <span style={{ fontSize: 12 }}>
-                HP <span className="stat-num">{c.hp_current ?? "?"}</span>/<span className="stat-num">{c.hp_max ?? "?"}</span>
-                {c.stamina_max != null && (
-                  <>
-                    {"  ·  STA "}
-                    <span className="stat-num">{c.stamina_current}</span>/<span className="stat-num">{c.stamina_max}</span>
-                  </>
-                )}
-                {c.ip_max != null && (
-                  <>
-                    {"  ·  IP "}
-                    <span className="stat-num">{c.ip_current}</span>/<span className="stat-num">{c.ip_max}</span>
-                  </>
-                )}
-                {wound && <span className="danger"> {"  ·  "}{wound}</span>}
-              </span>
-            </div>
-            <div style={{ marginTop: 6, fontSize: 12 }}>
-              <span className="muted">LOCATION</span> {state.world.currentLocation || "—"}
-            </div>
-            <div style={{ fontSize: 12 }}>
-              <span className="muted">QUESTS</span>{" "}
-              {state.questLog.filter((q) => q.status === "active").map((q) => q.title).join(" · ") || "—"}
-            </div>
-            {state.pendingChangeset.filter((p) => p.reviewed === "pending").length > 0 && (
-              <div style={{ fontSize: 12, color: "var(--gold-bright)" }}>
-                GM REVIEW QUEUE: {state.pendingChangeset.filter((p) => p.reviewed === "pending").length} pending
+          <VitalsHud state={state} onPatch={patchCharacter} onOpenSheet={() => setShowSheet(true)} />
+
+          {showSheet && (
+            <CharacterSheetPanel character={c} onPatch={patchCharacter} onClose={() => setShowSheet(false)} />
+          )}
+
+          {state.campaignBible && (
+            <details className="panel" style={{ fontSize: 12 }}>
+              <summary style={{ cursor: "pointer" }}>Campaign bible (GM-only — spoilers)</summary>
+              <div style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "var(--text2)" }}>
+                <b>Antagonist:</b> {state.campaignBible.antagonist}
+                {"\n\n"}
+                <b>Conflict:</b> {state.campaignBible.drivingConflict}
+                {"\n\n"}
+                <b>Acts:</b>
+                {state.campaignBible.acts.map((a, i) => `\n  ${i + 1}. ${a.goal} → ${a.turningPoint}`).join("")}
+                {"\n\n"}
+                <b>Planted twists:</b>
+                {state.campaignBible.plantedTwists.map((t) => `\n  ${t.delivered ? "✓" : "·"} ${t.twist}`).join("")}
               </div>
-            )}
-            {state.campaignBible && (
-              <details style={{ marginTop: 8, fontSize: 12 }}>
-                <summary style={{ cursor: "pointer" }}>Campaign bible (GM-only — spoilers)</summary>
-                <div style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "var(--text2)" }}>
-                  <b>Antagonist:</b> {state.campaignBible.antagonist}
-                  {"\n\n"}
-                  <b>Conflict:</b> {state.campaignBible.drivingConflict}
-                  {"\n\n"}
-                  <b>Acts:</b>
-                  {state.campaignBible.acts.map((a, i) => `\n  ${i + 1}. ${a.goal} → ${a.turningPoint}`).join("")}
-                  {"\n\n"}
-                  <b>Planted twists:</b>
-                  {state.campaignBible.plantedTwists.map((t) => `\n  ${t.delivered ? "✓" : "·"} ${t.twist}`).join("")}
-                </div>
-              </details>
-            )}
-            <details style={{ marginTop: 8, fontSize: 12 }}>
-              <summary style={{ cursor: "pointer" }}>PC PW reference (spot-check vs CP Phantom)</summary>
-              {(() => {
-                let ref;
-                try {
-                  ref = pcPwReference(c);
-                } catch {
-                  return <div className="muted">—</div>;
-                }
-                return (
-                  <div style={{ fontFamily: "var(--font)", marginTop: 6, color: "var(--text2)" }}>
-                    {ref.weapons.map((w) => (
-                      <div key={w.weapon}>
-                        {w.weapon} ({w.statPair}): PW <span className="stat-num">{w.finalPw}</span> · {w.diceInstruction} · WB {w.weaponBonus}
-                        {w.woundMultiplier != null && ` · wound ×${w.woundMultiplier}`}
-                      </div>
-                    ))}
-                    <div>
-                      {ref.reaction.label} ({ref.reaction.statPair}): PW <span className="stat-num">{ref.reaction.finalPw}</span>
-                    </div>
-                    {ref.skills.map((s) => (
-                      <div key={s.label}>
-                        {s.label} ({s.statPair}): PW <span className="stat-num">{s.finalPw}</span>
-                      </div>
-                    ))}
-                    <div>
-                      Armor SP: body {ref.armorSP.body}, head {ref.armorSP.head}
-                    </div>
-                  </div>
-                );
-              })()}
             </details>
-          </section>
+          )}
 
           {state.pendingChangeset.some((p) => p.reviewed === "pending") && (
             <section className="panel" style={{ borderColor: "var(--gold)" }}>
