@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CampaignState, newCampaignState, CharacterSheet, type CampaignBible, type Tone } from "@/lib/state/campaignState";
+import { applyDelta, type TurnDelta } from "@/lib/state/delta";
 import { getStore } from "@/lib/storage/store";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
 import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
@@ -207,6 +208,37 @@ export default function Home() {
       }
     } catch {
       /* recap is a nicety — never block loading on it */
+    }
+  }
+
+  async function worldTick() {
+    if (!state) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/world-tick", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ state }),
+      });
+      const data = (await res.json()) as { delta?: TurnDelta; narration?: string; error?: string };
+      if (!res.ok || data.error) {
+        setError(data.error || "world tick failed");
+        return;
+      }
+      let next = data.delta ? applyDelta(state, data.delta) : structuredClone(state);
+      if (data.narration) {
+        next = structuredClone(next);
+        next.sessionLog.push({ ts: Date.now(), type: "system", text: `While you were dark: ${data.narration}`, compressed: false });
+        next.meta.recap = `While you were dark: ${data.narration}`;
+        next.meta.recapForTs = Date.now();
+      }
+      await persist(next);
+      setShowRecap(Boolean(data.narration));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -489,7 +521,12 @@ export default function Home() {
           )}
 
           {state.mode === "downtime" && !combat?.active && (
-            <DowntimePanel state={state} busy={busy} onExit={() => sendTurn({ kind: "action", text: "I'm done resting up — I want to get back to work." })} />
+            <DowntimePanel
+              state={state}
+              busy={busy}
+              onExit={() => sendTurn({ kind: "action", text: "I'm done resting up — I want to get back to work." })}
+              onWorldTick={state.campaignBible ? worldTick : undefined}
+            />
           )}
 
           {state.consequences.some((q) => q.status === "armed") && (

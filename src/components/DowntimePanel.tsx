@@ -8,7 +8,17 @@
 
 import type { CampaignState } from "@/lib/state/campaignState";
 
-export function DowntimePanel({ state, onExit, busy }: { state: CampaignState; onExit: () => void; busy: boolean }) {
+export function DowntimePanel({
+  state,
+  onExit,
+  busy,
+  onWorldTick,
+}: {
+  state: CampaignState;
+  onExit: () => void;
+  busy: boolean;
+  onWorldTick?: () => void;
+}) {
   const eddies = (state.character.eurodollar as number | undefined) ?? 0;
   const days = state.downtime.daysElapsed;
 
@@ -16,9 +26,16 @@ export function DowntimePanel({ state, onExit, busy }: { state: CampaignState; o
     <section className="panel panel-accent" style={{ borderColor: "var(--gold)", margin: "12px 0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2 style={{ color: "var(--gold-bright)" }}>Downtime</h2>
-        <button onClick={onExit} disabled={busy} style={{ padding: "3px 10px", fontSize: 10 }}>
-          Back to work →
-        </button>
+        <span style={{ display: "flex", gap: 6 }}>
+          {onWorldTick && (
+            <button onClick={onWorldTick} disabled={busy} style={{ padding: "3px 10px", fontSize: 10 }} title="Let factions and the plot move off-screen while you're heads-down">
+              ⟳ Let the city move
+            </button>
+          )}
+          <button onClick={onExit} disabled={busy} style={{ padding: "3px 10px", fontSize: 10 }}>
+            Back to work →
+          </button>
+        </span>
       </div>
       <div style={{ display: "flex", gap: 22, margin: "6px 0 2px", fontFamily: "var(--font)" }}>
         <span>
