@@ -12,6 +12,7 @@ import { getStore } from "@/lib/storage/store";
 import { pwDiceCaps } from "@/lib/dice/rollPW";
 import { pcPwReference } from "@/lib/rules/live";
 import { firebaseConfigured, listCpPhantomCharacters, readCpPhantomCharacter, type CpPhantomCharacterRef } from "@/lib/storage/firebase";
+import { applyApprovedChanges, AUTO_APPLY_KINDS } from "@/lib/storage/pushback";
 import { DictationButton } from "@/components/DictationButton";
 
 type TurnResult =
@@ -92,6 +93,52 @@ export default function Home() {
       }
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewChange(id: string, decision: "approved" | "rejected") {
+    if (!state) return;
+    const s: CampaignState = structuredClone(state);
+    const row = s.pendingChangeset.find((p) => p.id === id);
+    if (row) row.reviewed = decision;
+    await persist(s);
+  }
+
+  async function pushApproved() {
+    if (!state) return;
+    const approved = state.pendingChangeset.filter((p) => p.reviewed === "approved");
+    if (approved.length === 0) {
+      setError("Approve some lines first.");
+      return;
+    }
+    if (!state.meta.importedFromCpPhantomId) {
+      setError("This campaign's PC wasn't imported from CP Phantom, so there's nowhere to push back to. Approved lines stay logged here.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const report = await applyApprovedChanges(state.meta.importedFromCpPhantomId, approved);
+      const s: CampaignState = structuredClone(state);
+      // Clear the lines that were actually written; leave skipped ones for manual handling.
+      const writtenIds = new Set(report.applied.map((a) => a.id));
+      s.pendingChangeset = s.pendingChangeset.filter((p) => !writtenIds.has(p.id));
+      s.sessionLog.push({
+        ts: Date.now(),
+        type: "system",
+        text:
+          `Pushed to CP Phantom: ${report.applied.map((a) => `${a.label} (${a.field} ${a.before}→${a.after})`).join("; ") || "nothing"}` +
+          (report.skipped.length ? ` — skipped: ${report.skipped.map((x) => `${x.label} (${x.reason})`).join("; ")}` : ""),
+        compressed: false,
+      });
+      await persist(s);
+      if (report.skipped.length) {
+        setError(`Pushed ${report.applied.length}, skipped ${report.skipped.length} (review-only or bad patch) — see session log.`);
+      }
+    } catch (e) {
+      setError("Push-back failed: " + (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -268,6 +315,39 @@ export default function Home() {
               })()}
             </details>
           </section>
+
+          {state.pendingChangeset.some((p) => p.reviewed === "pending") && (
+            <section className="panel" style={{ borderColor: "var(--gold)" }}>
+              <h2 style={{ color: "var(--gold-bright)" }}>GM review — push-back to CP Phantom</h2>
+              <p className="muted" style={{ fontSize: 11 }}>
+                Nothing here touches your live character until you approve it and hit Push.
+                {state.meta.importedFromCpPhantomId
+                  ? " Target: CP Phantom character this PC was imported from."
+                  : " This PC wasn't imported — approved lines just stay logged."}
+              </p>
+              {state.pendingChangeset
+                .filter((p) => p.reviewed === "pending")
+                .map((p) => (
+                  <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, letterSpacing: "0.1em", color: AUTO_APPLY_KINDS.has(p.kind) ? "var(--cyan)" : "var(--text3)", minWidth: 66 }}>
+                      {p.kind.toUpperCase()}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 12 }}>{p.label}</span>
+                    <button onClick={() => reviewChange(p.id, "approved")} style={{ padding: "3px 9px" }}>
+                      Approve
+                    </button>
+                    <button onClick={() => reviewChange(p.id, "rejected")} style={{ padding: "3px 9px" }}>
+                      Reject
+                    </button>
+                  </div>
+                ))}
+              <div style={{ marginTop: 8 }}>
+                <button onClick={pushApproved} disabled={busy || state.pendingChangeset.filter((p) => p.reviewed === "approved").length === 0}>
+                  {busy ? "Pushing…" : `Push ${state.pendingChangeset.filter((p) => p.reviewed === "approved").length} approved`}
+                </button>
+              </div>
+            </section>
+          )}
 
           <section style={{ margin: "14px 0" }}>
             <h2>Narration</h2>
@@ -450,7 +530,13 @@ function NewCampaignForm({
         bible = data.bible;
       }
       const id = "c_" + Date.now().toString(36);
-      const s = newCampaignState({ id, name: name.trim(), mode, character });
+      const s = newCampaignState({
+        id,
+        name: name.trim(),
+        mode,
+        character,
+        importedFromCpPhantomId: source === "import" ? importId : null,
+      });
       if (bible) s.campaignBible = bible;
       await onCreated(s);
     } catch (e) {

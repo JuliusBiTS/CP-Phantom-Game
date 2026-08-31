@@ -138,6 +138,9 @@ export const CampaignState = z.object({
     createdAt: z.number(),
     lastPlayedAt: z.number(),
     inGameDate: z.string().default(""),
+    /** CP Phantom `campaign/characters/{id}` key this PC was imported from —
+     *  the target for GM-approved push-back (§5.4). null = not imported. */
+    importedFromCpPhantomId: z.string().nullable().default(null),
   }),
   character: CharacterSheet,
   world: z.object({
@@ -178,11 +181,20 @@ export function newCampaignState(args: {
   name: string;
   mode: "gigs" | "campaign";
   character: CharacterSheet;
+  importedFromCpPhantomId?: string | null;
 }): CampaignState {
   const now = Date.now();
   return CampaignState.parse({
     schemaVersion: 1,
-    meta: { id: args.id, name: args.name, mode: args.mode, createdAt: now, lastPlayedAt: now, inGameDate: "" },
+    meta: {
+      id: args.id,
+      name: args.name,
+      mode: args.mode,
+      createdAt: now,
+      lastPlayedAt: now,
+      inGameDate: "",
+      importedFromCpPhantomId: args.importedFromCpPhantomId ?? null,
+    },
     character: args.character,
     world: { currentLocation: "", knownLocations: [], npcs: [], factions: [] },
     questLog: [],
