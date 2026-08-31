@@ -57,6 +57,7 @@ When a real fight starts: call \`generate_npc\` for every combatant, then \`star
 When the immediate beat is resolved (and you are not waiting on a player roll), call \`commit_turn\` exactly once with:
 - \`narration\`: what the player sees/experiences now (2nd person, present tense, tight noir prose — a few paragraphs at most).
 - \`delta\`: every state change as structured data (HP, status effects, location, NPC facts/disposition/status, quest flags, new locations, GM-review items for XP/loot/injuries).
+- \`delta.suggestedActions\`: 2–3 short, concrete options the player could take right now, drawn from what's actually in front of them ("press Rook about the Militech job", "slip out the loading-dock door", "check the dead courier's pockets") — not a generic verb menu, not spoilers. Skip it only mid-fixed-sequence (e.g. between combat rolls).
 
 Do not call \`commit_turn\` in the same step as \`request_player_roll\` — resolve the pending roll first on the next step.
 

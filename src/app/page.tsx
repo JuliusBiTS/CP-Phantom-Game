@@ -19,8 +19,17 @@ import { CharacterSheet as CharacterSheetPanel } from "@/components/CharacterShe
 import { DicePad } from "@/components/DicePad";
 import { QuickActions } from "@/components/QuickActions";
 import { MissionBoard } from "@/components/MissionBoard";
+import { TranscriptView } from "@/components/TranscriptView";
+import { popHistory } from "@/lib/state/history";
+import { estimateCostUsd, formatCostUsd } from "@/lib/llm/cost";
 
 type CharacterSheetType = CharacterSheet;
+
+function pendingFromState(s: CampaignState): PlayerRollPrompt | null {
+  const p = s.pendingPlayerRoll;
+  if (!p) return null;
+  return { prompt: p.prompt, statPair: p.statPair, pw: p.pw, diceInstruction: p.diceInstruction, dv: p.dv, kind: p.kind };
+}
 
 type TurnResult =
   | { kind: "awaiting-player-roll"; state: CampaignState; prompt: PlayerRollPrompt; narrationSoFar: string }
@@ -59,6 +68,7 @@ export default function Home() {
   const [lastRolls, setLastRolls] = useState<EngineRoll[]>([]);
   const [showSheet, setShowSheet] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   useEffect(() => {
     store.list().then(setCampaigns).catch(() => {});
@@ -66,16 +76,24 @@ export default function Home() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
+      const inField = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT");
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.shiftKey && !inField) {
+        e.preventDefault();
+        void undo();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (inField) return;
       const k = e.key.toLowerCase();
       if (k === "c") setShowSheet((v) => !v);
       else if (k === "m") setShowBoard((v) => !v);
+      else if (k === "t") setShowTranscript((v) => !v);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   async function persist(s: CampaignState) {
     setState(s);
@@ -111,6 +129,19 @@ export default function Home() {
       mut(next);
       void store.save(next);
       return next;
+    });
+  }
+
+  async function undo() {
+    setState((prev) => {
+      if (!prev) return prev;
+      const res = popHistory(prev);
+      if (!res) return prev;
+      setPending(pendingFromState(res.state));
+      setLastRolls([]);
+      setError(null);
+      void store.save(res.state).then(() => store.list().then(setCampaigns));
+      return res.state;
     });
   }
 
@@ -228,18 +259,7 @@ export default function Home() {
             if (s) {
               setState(s);
               setShowNew(false);
-              setPending(
-                s.pendingPlayerRoll
-                  ? {
-                      prompt: s.pendingPlayerRoll.prompt,
-                      statPair: s.pendingPlayerRoll.statPair,
-                      pw: s.pendingPlayerRoll.pw,
-                      diceInstruction: s.pendingPlayerRoll.diceInstruction,
-                      dv: s.pendingPlayerRoll.dv,
-                      kind: s.pendingPlayerRoll.kind,
-                    }
-                  : null,
-              );
+              setPending(pendingFromState(s));
               setLastRolls([]);
             }
           }}
@@ -257,6 +277,22 @@ export default function Home() {
             MODE: {state.meta.mode.toUpperCase()}
           </span>
         )}
+        {state && (
+          <span style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+            <button
+              onClick={undo}
+              disabled={busy || (state.history?.length ?? 0) === 0}
+              title={state.history?.length ? `Rewind: ${state.history[state.history.length - 1].label}` : "Nothing to undo"}
+              style={{ padding: "3px 9px", fontSize: 10 }}
+            >
+              ↶ Rewind{state.history?.length ? ` (${state.history.length})` : ""}
+            </button>
+            <button onClick={() => setShowTranscript(true)} style={{ padding: "3px 9px", fontSize: 10 }}>
+              Transcript (T)
+            </button>
+            <CostMeter state={state} />
+          </span>
+        )}
       </section>
 
       {error && (
@@ -268,6 +304,8 @@ export default function Home() {
       {showNew && <NewCampaignForm onCreated={onCreated} onError={setError} />}
 
       {!showNew && state && showBoard && <MissionBoard state={state} onPatchState={patchState} onClose={() => setShowBoard(false)} />}
+
+      {!showNew && state && showTranscript && <TranscriptView state={state} onClose={() => setShowTranscript(false)} />}
 
       {!showNew && state && c && (
         <>
@@ -397,6 +435,19 @@ export default function Home() {
           ) : (
             <section style={{ margin: "14px 0" }}>
               <h2>{combat?.active ? `Round ${combat.round} — your turn` : "What do you do?"}</h2>
+              {!combat?.active && state.suggestedActions.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 8px" }}>
+                  {state.suggestedActions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setAction((a) => (a ? a.trim() + " " : "") + s)}
+                      style={{ padding: "4px 10px", fontSize: 11, textAlign: "left", borderColor: "var(--border2)" }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
               {c && (
                 <QuickActions
                   combat={combat ?? null}
@@ -445,6 +496,52 @@ export default function Home() {
         <p className="muted">Load a campaign, or start a new one. Setup: see SETUP.md.</p>
       )}
     </main>
+  );
+}
+
+// ── Session cost meter ─────────────────────────────────────────────────────
+
+function CostMeter({ state }: { state: CampaignState }) {
+  const [open, setOpen] = useState(false);
+  const u = state.meta.usage;
+  const usd = estimateCostUsd(u, state.meta.model);
+  return (
+    <span style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Estimated Anthropic API spend this campaign"
+        style={{ padding: "3px 9px", fontSize: 10, fontFamily: "var(--font)" }}
+      >
+        ≈ {formatCostUsd(usd)} · {u.turns} turn{u.turns === 1 ? "" : "s"}
+      </button>
+      {open && (
+        <div
+          className="panel"
+          style={{ position: "absolute", right: 0, top: "110%", zIndex: 50, width: 230, fontSize: 11, fontFamily: "var(--font)" }}
+        >
+          <div className="muted" style={{ fontSize: 9, letterSpacing: "0.15em", marginBottom: 4 }}>
+            TOKENS · {state.meta.model}
+          </div>
+          <Row k="input" v={u.inputTokens} />
+          <Row k="output" v={u.outputTokens} />
+          <Row k="cache read" v={u.cacheReadTokens} />
+          <Row k="cache write" v={u.cacheWriteTokens} />
+          <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 4 }}>
+            <Row k="est. cost" v={formatCostUsd(usd)} />
+          </div>
+          <div className="muted" style={{ fontSize: 9, marginTop: 4 }}>Estimate — published per-token rates.</div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+function Row({ k, v }: { k: string; v: number | string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <span className="muted">{k}</span>
+      <span className="stat-num">{typeof v === "number" ? v.toLocaleString() : v}</span>
+    </div>
   );
 }
 

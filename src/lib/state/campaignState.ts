@@ -205,6 +205,29 @@ export const PendingChange = z.object({
 });
 export type PendingChange = z.infer<typeof PendingChange>;
 
+/** Cumulative Anthropic token spend for this campaign — surfaced as a cost
+ *  meter (FEATURE_PLAN.md §1.4). Estimate only; rates live in lib/llm/cost.ts. */
+export const Usage = z.object({
+  inputTokens: z.number().default(0),
+  outputTokens: z.number().default(0),
+  cacheReadTokens: z.number().default(0),
+  cacheWriteTokens: z.number().default(0),
+  /** Player turns taken (one per action, not per model round-trip). */
+  turns: z.number().default(0),
+});
+export type Usage = z.infer<typeof Usage>;
+
+const USAGE_ZERO = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0 };
+
+/** One undo point — the whole state (minus its own history) before a turn ran.
+ *  FEATURE_PLAN.md §1.3. */
+export const HistoryEntry = z.object({
+  ts: z.number(),
+  label: z.string(),
+  snapshot: z.any(),
+});
+export type HistoryEntry = z.infer<typeof HistoryEntry>;
+
 export const CampaignState = z.object({
   schemaVersion: z.literal(1),
   meta: z.object({
@@ -217,6 +240,9 @@ export const CampaignState = z.object({
     /** CP Phantom `campaign/characters/{id}` key this PC was imported from —
      *  the target for GM-approved push-back (§5.4). null = not imported. */
     importedFromCpPhantomId: z.string().nullable().default(null),
+    /** Model that actually ran the turns (from SOLO_MODEL) — for cost estimates. */
+    model: z.string().default("claude-sonnet-5"),
+    usage: Usage.default(USAGE_ZERO),
   }),
   character: CharacterSheet,
   world: z.object({
@@ -255,6 +281,10 @@ export const CampaignState = z.object({
   transcript: z.array(z.any()).default([]),
   /** Turns since the last fact-compression pass. */
   turnsSinceCompression: z.number().default(0),
+  /** GM-offered "you could…" options, refreshed every turn. FEATURE_PLAN.md §M1. */
+  suggestedActions: z.array(z.string()).default([]),
+  /** Undo ring — newest last, capped in lib/state/history.ts. FEATURE_PLAN.md §1.3. */
+  history: z.array(HistoryEntry).default([]),
 });
 export type CampaignState = z.infer<typeof CampaignState>;
 
@@ -276,6 +306,8 @@ export function newCampaignState(args: {
       lastPlayedAt: now,
       inGameDate: "",
       importedFromCpPhantomId: args.importedFromCpPhantomId ?? null,
+      model: "claude-sonnet-5",
+      usage: USAGE_ZERO,
     },
     character: args.character,
     world: { currentLocation: "", knownLocations: [], npcs: [], factions: [] },
@@ -289,5 +321,7 @@ export function newCampaignState(args: {
     pendingTurnMessages: null,
     transcript: [],
     turnsSinceCompression: 0,
+    suggestedActions: [],
+    history: [],
   });
 }

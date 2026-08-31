@@ -143,6 +143,10 @@ export const TurnDelta = z.object({
     .optional(),
 
   inGameDate: z.string().optional(),
+
+  /** 2–3 concrete "you could…" options for the player, from the current fiction.
+   *  Replaces the previous set each turn. FEATURE_PLAN.md §M1. */
+  suggestedActions: z.array(z.string()).max(4).optional(),
 });
 export type TurnDelta = z.infer<typeof TurnDelta>;
 
@@ -351,6 +355,7 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
   }
 
   if (delta.inGameDate) s.meta.inGameDate = delta.inGameDate;
+  if (delta.suggestedActions) s.suggestedActions = delta.suggestedActions.slice(0, 4);
 
   // ── Mission Board ────────────────────────────────────────────────────────
   applyBoardDelta(s, delta.missionBoard);

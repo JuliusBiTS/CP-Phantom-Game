@@ -28,6 +28,8 @@ import {
   StartCombatInput,
 } from "./tools";
 import { maybeCompress } from "./compress";
+import { addUsage } from "./cost";
+import { pushHistory } from "../state/history";
 import { generateNpcSheet } from "../rules/generate";
 import { rollInitiativeFor, buildInitiativeOrder, initiativeLabel, type InitiativeEntry } from "../rules/initiative";
 import { pcPwReference } from "../rules/live";
@@ -303,6 +305,7 @@ async function drive(
       messages,
     });
 
+    state.meta.usage = addUsage(state.meta.usage, response.usage);
     narration = [narration, textOf(response.content)].filter(Boolean).join("\n\n");
     messages.push({ role: "assistant", content: response.content });
 
@@ -391,9 +394,13 @@ function persistTranscript(state: CampaignState, messages: Anthropic.MessagePara
 }
 
 export async function runTurn(state: CampaignState, input: TurnInput): Promise<TurnResult> {
-  const working: CampaignState = structuredClone(state);
+  let working: CampaignState = structuredClone(state);
 
   if (input.kind === "action") {
+    // Snapshot for undo BEFORE anything mutates, then count the turn.
+    working = pushHistory(working, input.text);
+    working.meta.model = MODEL;
+    working.meta.usage = { ...working.meta.usage, turns: (working.meta.usage?.turns ?? 0) + 1 };
     working.sessionLog.push({ ts: Date.now(), type: "action", text: input.text, compressed: false });
     const userContent = `${buildStateContext(working)}\n\n---\n\nPlayer action: ${input.text}`;
     const seed = messagesFor(working, [{ role: "user", content: userContent }]);

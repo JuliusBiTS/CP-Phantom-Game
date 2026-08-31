@@ -44,7 +44,17 @@ export const localStore: CampaignStore = {
   },
   async save(state) {
     if (typeof localStorage === "undefined") return;
-    localStorage.setItem(LS_PREFIX + state.meta.id, JSON.stringify(state));
+    const key = LS_PREFIX + state.meta.id;
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      // Quota hit — the undo ring is the biggest droppable payload. Shed it and retry.
+      try {
+        localStorage.setItem(key, JSON.stringify({ ...state, history: [] }));
+      } catch {
+        /* still too big — give up silently; Firebase users are unaffected */
+      }
+    }
   },
 };
 

@@ -101,6 +101,16 @@ present-tense — "press Rook about the Militech job", "case the loading dock", 
 right now, not a menu of verbs. Omit in the middle of a fixed sequence."
 **UI.** Render them as chips above the action box (alongside `QuickActions`); tap to pre-fill.
 
+> **Built 2026-09-01** (114 tests, tsc/lint/build clean, browser-verified). Foundations:
+> `lib/state/history.ts` (snapshot ring, cap 10, `state.history`), `lib/llm/cost.ts` (`addUsage`
+> folds `response.usage` → `meta.usage`; `estimateCostUsd`). Schema: `meta.model`, `meta.usage`,
+> `state.suggestedActions`, `state.history`. `runTurn` snapshots before each action turn + counts
+> the turn; `drive` accumulates usage per model call. `delta.suggestedActions` (max 4, replaces
+> each turn). UI: header `↶ Rewind (n)` + `Ctrl/Cmd+Z`, `Transcript (T)` overlay
+> (`components/TranscriptView.tsx` — story/rolls/all filter, order toggle, search), `CostMeter`
+> popover, suggested-action chip row above `QuickActions`. `localStore.save` sheds `history` on a
+> quota error. Compression-pass tokens not yet counted (minor). Streaming (M2) still to do.
+
 ---
 
 ## M2 — Session feel  ·  S + M
