@@ -114,6 +114,14 @@ export const TurnDelta = z.object({
   /** Twist ids from the campaign bible that were delivered this turn. */
   twistsDelivered: z.array(z.number()).optional(),
 
+  /** Campaign plan (generator) — FEATURE_PLAN §M9. */
+  campaignPlan: z
+    .object({
+      setGigStatus: z.array(z.object({ id: z.string(), status: z.enum(["locked", "available", "active", "done"]) })).optional(),
+      advanceToAct: z.number().optional(),
+    })
+    .optional(),
+
   /** New entries for the GM push-back queue — never auto-applied to CP Phantom. */
   pendingChanges: z
     .array(
@@ -241,6 +249,26 @@ export const TurnDelta = z.object({
 
   /** One line for the timeline view — "Met Rook. Took the Diaz gig." */
   timelineBeat: z.string().optional(),
+
+  /** The apartment — FEATURE_PLAN.md §M9. */
+  apartment: z
+    .object({
+      set: z
+        .object({
+          owned: z.boolean().optional(),
+          name: z.string().optional(),
+          district: z.string().optional(),
+          tier: z.enum(["squat", "cheap", "decent", "corpo"]).optional(),
+          safehouse: z.boolean().optional(),
+        })
+        .optional(),
+      addUpgrade: z.string().optional(),
+      stashItem: z.string().optional(),
+      unstashItem: z.string().optional(),
+      visitor: z.object({ npcId: z.string(), reason: z.string() }).optional(),
+      clearVisitor: z.string().optional(),
+    })
+    .optional(),
 
   /** Money / lifestyle (house rule — see FEATURE_PLAN §M4). */
   economy: z
@@ -501,6 +529,23 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
     }
   }
 
+  if (delta.campaignPlan) {
+    const cp = s.campaignPlan;
+    for (const g of delta.campaignPlan.setGigStatus ?? []) {
+      for (const act of cp.acts) {
+        const gig = act.gigs.find((x) => x.id === g.id);
+        if (gig) gig.status = g.status;
+      }
+    }
+    if (delta.campaignPlan.advanceToAct != null && delta.campaignPlan.advanceToAct > cp.currentAct) {
+      cp.currentAct = delta.campaignPlan.advanceToAct;
+      for (const act of cp.acts) {
+        if (act.act === cp.currentAct) for (const gig of act.gigs) if (gig.status === "locked") gig.status = "available";
+      }
+      s.sessionLog.push({ ts: Date.now(), type: "system", text: `Campaign — Act ${cp.currentAct}.`, compressed: false });
+    }
+  }
+
   for (const pc of delta.pendingChanges ?? []) {
     s.pendingChangeset.push({
       id: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -546,6 +591,44 @@ export function applyDelta(state: CampaignState, delta: TurnDelta): CampaignStat
   // ── Timeline ───────────────────────────────────────────────────────────
   if (delta.timelineBeat) {
     s.timeline.push({ ts: Date.now(), inGameDate: s.meta.inGameDate, text: delta.timelineBeat });
+  }
+
+  // ── The apartment (§M9) ────────────────────────────────────────────────
+  if (delta.apartment) {
+    const ap = s.apartment;
+    const da = delta.apartment;
+    if (da.set) {
+      if (da.set.owned != null) ap.owned = da.set.owned;
+      if (da.set.name != null) ap.name = da.set.name;
+      if (da.set.district != null) ap.district = da.set.district;
+      if (da.set.tier != null) ap.tier = da.set.tier;
+      if (da.set.safehouse != null) ap.safehouse = da.set.safehouse;
+    }
+    if (da.addUpgrade && !ap.upgrades.includes(da.addUpgrade)) {
+      ap.upgrades.push(da.addUpgrade);
+      s.sessionLog.push({ ts: Date.now(), type: "system", text: `Apartment upgrade installed — ${da.addUpgrade}.`, compressed: false });
+    }
+    if (da.stashItem) {
+      const inv = Array.isArray(c.inventory) ? (c.inventory as unknown[]) : [];
+      const nameOf = (x: unknown) => (typeof x === "string" ? x : (x as { name?: string })?.name ?? "");
+      const idx = inv.findIndex((x) => nameOf(x).toLowerCase() === da.stashItem!.toLowerCase());
+      if (idx >= 0) {
+        ap.stash.push(inv[idx]);
+        c.inventory = inv.filter((_, i) => i !== idx);
+      } else {
+        ap.stash.push(da.stashItem);
+      }
+    }
+    if (da.unstashItem) {
+      const nameOf = (x: unknown) => (typeof x === "string" ? x : (x as { name?: string })?.name ?? "");
+      const idx = ap.stash.findIndex((x) => nameOf(x).toLowerCase() === da.unstashItem!.toLowerCase());
+      if (idx >= 0) {
+        c.inventory = [...(Array.isArray(c.inventory) ? c.inventory : []), ap.stash[idx]];
+        ap.stash = ap.stash.filter((_, i) => i !== idx);
+      }
+    }
+    if (da.visitor && !ap.visitors.some((v) => v.npcId === da.visitor!.npcId)) ap.visitors.push(da.visitor);
+    if (da.clearVisitor) ap.visitors = ap.visitors.filter((v) => v.npcId !== da.clearVisitor);
   }
 
   // ── Critical-injury treatment (§13.4) ──────────────────────────────────

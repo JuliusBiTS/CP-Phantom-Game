@@ -86,6 +86,10 @@ At the end of a turn that meaningfully moved the story — met someone important
 
 A netrunner PC can hack in normal play and in combat, without a full dive. \`request_player_roll\` with the hack's stat pair (Int+Focus routine / Int+Creativity exotic) vs the target's Firewall (§10.2: non-cybered = can't be hacked; street gang 8–12; corpo security 15–20; elite/netrunner 22–30). Each hack costs IP — take the cost from the "Known hacks" block below, subtract it via \`delta.pcIpChange\`. IP fully regenerates between fights. A traceable connection (remote) lets the target's runner attempt a trace (§10.7).
 
+## The apartment (§M9)
+
+If the PC has a home base (\`apartment.owned\`), it's where downtime happens, where stashed gear is safe (not carried), and where contacts come to them. Upgrades unlock capabilities: **workbench** (craft / mod gear), **medbay** (better healing than a rest), **armory** (secure weapon storage + fast re-kit), **terminal** (research, or jack in from safety), **safe-room** (ride out heat — resets pursuit), **security** (harder for enemies to hit you at home). Buy the place / upgrades in downtime: \`delta.apartment.set\` / \`delta.apartment.addUpgrade\`. Move gear with \`delta.apartment.stashItem\` / \`unstashItem\`. A contact showing up: \`delta.apartment.visitor = { npcId, reason }\`.
+
 ## Modes
 
 Most play is free-roaming exploration. When the pace changes, switch the ambient loop in \`commit_turn\`'s delta:
@@ -123,6 +127,9 @@ export function buildSystemPrompt(state: CampaignState): string {
   if (state.campaignBible) {
     // Stable per campaign → lives in the cached prefix, not the per-turn context.
     p += `\n\n## The campaign bible (GM-ONLY)\n\n\`\`\`json\n${JSON.stringify(state.campaignBible, null, 2)}\n\`\`\``;
+  }
+  if (state.campaignPlan?.generated) {
+    p += `\n\n## The campaign plan (GM-ONLY — a spine, not rails)\n\nYou have a gig-by-gig plan. Offer gigs from the CURRENT act (\`currentAct: ${state.campaignPlan.currentAct}\`) in an order that fits the fiction and the PC's history/consequences; adapt the hooks. When the PC takes a gig set its status "active" (\`delta.campaignPlan.setGigStatus\`); "done" when it wraps (put its payout minus the fixer's cut in \`delta.economy.eddieChange\`). When an act's turning point lands, \`delta.campaignPlan.advanceToAct\`. Don't railroad — if the player goes sideways, bend the plan to meet them.\n\n\`\`\`json\n${JSON.stringify(state.campaignPlan.acts, null, 2)}\n\`\`\``;
   }
   return p;
 }
@@ -173,6 +180,9 @@ export function buildStateContext(state: CampaignState): string {
     consequences: state.consequences
       .filter((c) => c.status === "armed")
       .map((c) => ({ id: c.id, text: c.text, severity: c.severity, kind: c.kind })),
+    apartment: state.apartment.owned
+      ? { name: state.apartment.name, district: state.apartment.district, tier: state.apartment.tier, upgrades: state.apartment.upgrades, safehouse: state.apartment.safehouse, stashCount: state.apartment.stash.length, visitors: state.apartment.visitors }
+      : undefined,
     combat: state.combat?.active
       ? {
           round: state.combat.round,

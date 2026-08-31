@@ -264,6 +264,28 @@ export const TimelineBeat = z.object({
 });
 export type TimelineBeat = z.infer<typeof TimelineBeat>;
 
+/** A planned gig in the campaign generator's output. FEATURE_PLAN.md §M9. */
+export const CampaignGig = z.object({
+  id: z.string(),
+  act: z.number(),
+  title: z.string(),
+  hook: z.string(),
+  contact: z.string().default(""),
+  opposition: z.string().default(""),
+  location: z.string().default(""),
+  advancesTwist: z.number().nullable().default(null),
+  payoutEb: z.number().default(0),
+  status: z.enum(["locked", "available", "active", "done"]).default("locked"),
+});
+export type CampaignGig = z.infer<typeof CampaignGig>;
+
+export const CampaignPlan = z.object({
+  generated: z.boolean().default(false),
+  currentAct: z.number().default(1),
+  acts: z.array(z.object({ act: z.number(), goal: z.string(), gigs: z.array(CampaignGig).default([]) })).default([]),
+});
+export type CampaignPlan = z.infer<typeof CampaignPlan>;
+
 export const CampaignBible = z.object({
   antagonist: z.string(),
   drivingConflict: z.string(),
@@ -331,6 +353,21 @@ export const Downtime = z.object({
   daysElapsed: z.number().default(0),
 });
 export type Downtime = z.infer<typeof Downtime>;
+
+/** The apartment — a persistent home base. FEATURE_PLAN.md §M9. */
+export const Apartment = z.object({
+  owned: z.boolean().default(false),
+  name: z.string().default(""),
+  district: z.string().default(""),
+  tier: z.enum(["squat", "cheap", "decent", "corpo"]).default("cheap"),
+  /** workbench / medbay / armory / terminal / safe-room / security … */
+  upgrades: z.array(z.string()).default([]),
+  /** Gear stored at home — safe, but not carried. */
+  stash: z.array(z.any()).default([]),
+  safehouse: z.boolean().default(false),
+  visitors: z.array(z.object({ npcId: z.string(), reason: z.string() })).default([]),
+});
+export type Apartment = z.infer<typeof Apartment>;
 
 /** NET dive — FEATURE_PLAN.md §M7. Active while `mode === "netrun"`. IP itself
  *  lives on the character sheet (ip_current / ip_max). */
@@ -418,12 +455,14 @@ export const CampaignState = z.object({
   }),
   questLog: z.array(QuestEntry).default([]),
   campaignBible: CampaignBible.optional(),
+  campaignPlan: CampaignPlan.default({ generated: false, currentAct: 1, acts: [] }),
   missionBoard: MissionBoard.default({ windows: [], links: [], activeMissionQuestId: null, lastOpenedAt: 0, blowUpAt: 0 }),
   combat: Combat.default({ active: false, round: 1, turnIndex: 0, order: [], pcTargetId: null, lastPcAction: null, zones: [], overwatch: [], flinkUsed: false }),
   mode: Mode.default("exploration"),
   downtime: Downtime.default({ daysElapsed: 0 }),
   netrun: Netrun.default({ active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] }),
   chase: Chase.default({ active: false, spur: 2, round: 1, terrain: "backstreets", pcRole: "runner", pursuerTier: "standard", vehicles: [] }),
+  apartment: Apartment.default({ owned: false, name: "", district: "", tier: "cheap", upgrades: [], stash: [], safehouse: false, visitors: [] }),
   consequences: z.array(Consequence).default([]),
   timeline: z.array(TimelineBeat).default([]),
   sessionLog: z.array(SessionLogEntry).default([]),
@@ -492,6 +531,7 @@ export function newCampaignState(args: {
     downtime: { daysElapsed: 0 },
     netrun: { active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] },
     chase: { active: false, spur: 2, round: 1, terrain: "backstreets", pcRole: "runner", pursuerTier: "standard", vehicles: [] },
+    apartment: { owned: false, name: "", district: "", tier: "cheap", upgrades: [], stash: [], safehouse: false, visitors: [] },
     consequences: [],
     timeline: [],
     sessionLog: [],

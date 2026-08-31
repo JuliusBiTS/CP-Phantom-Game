@@ -575,6 +575,28 @@ function WindowBody({
               {t.delivered ? `✓ ${t.twist}` : "█████ █████████ ████ ███████ █████"}
             </div>
           ))}
+
+          {state.campaignPlan?.generated && (
+            <div style={{ marginTop: 6 }}>
+              <b>Plan · Act {state.campaignPlan.currentAct}</b>
+              {state.campaignPlan.acts.map((act) => (
+                <div key={act.act} style={{ marginTop: 2, opacity: act.act === state.campaignPlan.currentAct ? 1 : 0.55 }}>
+                  <span className="muted">Act {act.act} — {act.goal}</span>
+                  {act.gigs.map((g) => (
+                    <div
+                      key={g.id}
+                      className={g.status === "done" ? "board-declassified" : g.status === "locked" ? "board-redacted" : undefined}
+                      style={{ marginLeft: 8 }}
+                    >
+                      {g.status === "locked"
+                        ? "████ ███████ █████"
+                        : `${g.status === "active" ? "▸ " : g.status === "done" ? "✓ " : "· "}${g.title} (${g.contact})`}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }

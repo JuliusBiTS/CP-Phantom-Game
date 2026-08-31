@@ -101,6 +101,46 @@ describe("applyDelta — M6 combat depth", () => {
   });
 });
 
+describe("applyDelta — M9 apartment + campaign plan", () => {
+  it("apartment: buy, upgrade, stash / unstash, visitors", () => {
+    let s = base();
+    s.character.inventory = ["a spare rifle", "burner phone"];
+    s = applyDelta(s, { apartment: { set: { owned: true, name: "V's conapt", district: "Watson", tier: "cheap" }, addUpgrade: "workbench" } });
+    expect(s.apartment.owned).toBe(true);
+    expect(s.apartment.upgrades).toEqual(["workbench"]);
+
+    s = applyDelta(s, { apartment: { stashItem: "a spare rifle" } });
+    expect(s.apartment.stash).toContain("a spare rifle");
+    expect(s.character.inventory).toEqual(["burner phone"]);
+
+    s = applyDelta(s, { apartment: { unstashItem: "a spare rifle" } });
+    expect(s.character.inventory).toContain("a spare rifle");
+    expect(s.apartment.stash).toHaveLength(0);
+
+    s = applyDelta(s, { apartment: { visitor: { npcId: "rook", reason: "wants his cut" } } });
+    expect(s.apartment.visitors).toHaveLength(1);
+    s = applyDelta(s, { apartment: { clearVisitor: "rook" } });
+    expect(s.apartment.visitors).toHaveLength(0);
+  });
+
+  it("campaign plan: set gig status, advance act unlocks that act's gigs", () => {
+    let s = base();
+    s.campaignPlan = {
+      generated: true,
+      currentAct: 1,
+      acts: [
+        { act: 1, goal: "get in", gigs: [{ id: "gig_1_0", act: 1, title: "Case the club", hook: "", contact: "Rook", opposition: "", location: "", advancesTwist: null, payoutEb: 500, status: "available" }] },
+        { act: 2, goal: "go deeper", gigs: [{ id: "gig_2_0", act: 2, title: "The heist", hook: "", contact: "Rook", opposition: "", location: "", advancesTwist: 0, payoutEb: 3000, status: "locked" }] },
+      ],
+    };
+    s = applyDelta(s, { campaignPlan: { setGigStatus: [{ id: "gig_1_0", status: "active" }] } });
+    expect(s.campaignPlan.acts[0].gigs[0].status).toBe("active");
+    s = applyDelta(s, { campaignPlan: { advanceToAct: 2 } });
+    expect(s.campaignPlan.currentAct).toBe(2);
+    expect(s.campaignPlan.acts[1].gigs[0].status).toBe("available");
+  });
+});
+
 describe("applyDelta — M4 aftermath", () => {
   it("advanceDays in downtime is a full rest (HP restored, injuries persist)", () => {
     let s = base();

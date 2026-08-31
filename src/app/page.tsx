@@ -28,6 +28,7 @@ import { ToneEditor } from "@/components/ToneEditor";
 import { DowntimePanel } from "@/components/DowntimePanel";
 import { NetrunView } from "@/components/NetrunView";
 import { ChaseView } from "@/components/ChaseView";
+import { ApartmentView } from "@/components/ApartmentView";
 import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
@@ -79,6 +80,7 @@ export default function Home() {
   const [showTranscript, setShowTranscript] = useState(false);
   const [showTone, setShowTone] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
+  const [showApartment, setShowApartment] = useState(false);
 
   useEffect(() => {
     store.list().then(setCampaigns).catch(() => {});
@@ -99,6 +101,7 @@ export default function Home() {
       if (k === "c") setShowSheet((v) => !v);
       else if (k === "m") setShowBoard((v) => !v);
       else if (k === "t") setShowTranscript((v) => !v);
+      else if (k === "h") setShowApartment((v) => !v);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -472,6 +475,8 @@ export default function Home() {
 
       {!showNew && state && showTranscript && <TranscriptView state={state} onClose={() => setShowTranscript(false)} />}
 
+      {!showNew && state && showApartment && <ApartmentView state={state} onClose={() => setShowApartment(false)} />}
+
       {!showNew && state && c && (
         <>
           <VitalsHud state={state} onPatch={patchCharacter} onOpenSheet={() => setShowSheet(true)} />
@@ -483,6 +488,12 @@ export default function Home() {
                 <span className="board-new" style={{ marginLeft: 6 }}>NEW</span>
               )}
             </button>
+            {state.apartment.owned && (
+              <button onClick={() => setShowApartment(true)} style={{ padding: "3px 10px", fontSize: 10 }}>
+                Apartment (H)
+                {state.apartment.visitors.length > 0 && <span className="board-new" style={{ marginLeft: 6 }}>{state.apartment.visitors.length}</span>}
+              </button>
+            )}
           </div>
 
           {showSheet && (
@@ -817,6 +828,7 @@ function NewCampaignForm({
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"gigs" | "campaign">("gigs");
   const [premise, setPremise] = useState("");
+  const [fullCampaign, setFullCampaign] = useState(true);
   const [tone, setTone] = useState<Tone>({ ...DEFAULT_TONE });
   const [source, setSource] = useState<"blank" | "paste" | "import" | "build">("blank");
   const [pasteJson, setPasteJson] = useState("");
@@ -861,15 +873,18 @@ function NewCampaignForm({
     try {
       const character = await resolveCharacter();
       let bible: CampaignBible | undefined;
+      let plan: CampaignState["campaignPlan"] | undefined;
       if (mode === "campaign") {
-        const res = await fetch("/api/bible", {
+        const endpoint = fullCampaign ? "/api/generate-campaign" : "/api/bible";
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ premise, character }),
         });
-        const data = (await res.json()) as { bible?: CampaignBible; error?: string };
-        if (!res.ok || data.error) throw new Error(data.error || "campaign bible generation failed");
+        const data = (await res.json()) as { bible?: CampaignBible; plan?: CampaignState["campaignPlan"]; error?: string };
+        if (!res.ok || data.error) throw new Error(data.error || "campaign generation failed");
         bible = data.bible;
+        plan = data.plan;
       }
       const id = "c_" + Date.now().toString(36);
       const s = newCampaignState({
@@ -880,6 +895,7 @@ function NewCampaignForm({
         importedFromCpPhantomId: source === "import" ? importId : null,
       });
       if (bible) s.campaignBible = bible;
+      if (plan) s.campaignPlan = plan;
       s.meta.tone = tone;
       await onCreated(s);
     } catch (e) {
@@ -910,12 +926,18 @@ function NewCampaignForm({
       </div>
 
       {mode === "campaign" && (
-        <label style={{ display: "block", marginBottom: 10 }}>
-          <span className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}>
-            PREMISE (seeds the campaign bible — leave blank to let the GM invent one)
-          </span>
-          <textarea value={premise} onChange={(e) => setPremise(e.target.value)} rows={2} style={{ width: "100%", marginTop: 3 }} placeholder="A fixer I trusted sold me out. I want to know who's really pulling the strings." />
-        </label>
+        <>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <span className="muted" style={{ fontSize: 10, letterSpacing: "0.2em" }}>
+              PREMISE (seeds the campaign — leave blank to let the GM invent one)
+            </span>
+            <textarea value={premise} onChange={(e) => setPremise(e.target.value)} rows={2} style={{ width: "100%", marginTop: 3 }} placeholder="Make me a 5-act campaign about a stolen military AI." />
+          </label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10, fontSize: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={fullCampaign} onChange={(e) => setFullCampaign(e.target.checked)} />
+            Generate the full campaign (bible + gigs per act) — slower, ~$0.15
+          </label>
+        </>
       )}
 
       <details style={{ marginBottom: 10 }}>
