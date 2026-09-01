@@ -145,7 +145,8 @@ export function ConversationHud({
   }, [streamText, speaker]);
 
   // When a turn fully lands (no stream, not busy), speak whatever's left + the final narration.
-  const lastNarrRef = useRef("");
+  // Seed with the current narration so toggling hands-free doesn't re-read what's already on screen.
+  const lastNarrRef = useRef(liveNarration);
   useEffect(() => {
     if (busy || streamText) return;
     if (liveNarration && liveNarration !== lastNarrRef.current) {

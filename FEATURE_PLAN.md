@@ -510,6 +510,24 @@ Hard turn / Shake them / Trade paint / Bail). Speed-line motion.
 
 ---
 
+> **Built 2026-09-01 — V1.** All four:
+> - **Conversational mode:** `lib/tts/useSpeaker.ts` (speechSynthesis, sentence-queued so
+>   streaming narration speaks as it arrives), `ConversationHud` ("🎙 Hands-free" toggle) —
+>   GM reads aloud, mic opens (Web Speech), spoken action → turn, spoken roll parsed +
+>   submitted. Firefox: TTS out + tap-to-talk.
+> - **The apartment:** `state.apartment` (owned/tier/upgrades/stash/safehouse/visitors),
+>   `delta.apartment`, `ApartmentView` (hotkey `H`), prompt section.
+> - **Campaign generator:** `generateCampaignPlan()` + `POST /api/generate-campaign` (bible +
+>   1–3 gigs/act), `state.campaignPlan`, "generate full campaign" form checkbox,
+>   `delta.campaignPlan`, redacted plan in the bible board window.
+> - **Party mode:** `state.party.bench` (non-active PCs; `state.character` stays the active
+>   one so nothing else changes), `PartyRail` swap. Full in-combat party integration deferred.
+>
+> **V1 polish pass:** removed the Mission Board `.board-scan` sweep (animated background-position
+> — the perf drain) + link marching-ants/drop-shadow; board drag now moves via `transform`;
+> undo snapshots drop `transcript`; `combatantView` handles vehicles. Also fixed the batched-
+> tool-call 400 (see M7 note). **179→181 tests, browser-verified end to end.**
+
 ## M9 — Signature builds  ·  L each  ·  mostly independent
 
 ### Fully conversational mode  ·  M  ·  depends: M2 streaming
