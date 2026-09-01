@@ -10,10 +10,14 @@ import type { CampaignState } from "./campaignState";
 
 export const HISTORY_LIMIT = 10;
 
-/** A snapshot is the full state with its own `history` stripped. */
+/** A snapshot is the state with the big, self-healing bits stripped: its own
+ *  `history` (no nesting) and `transcript` (the model re-reads current state
+ *  fresh every turn, so a slightly-ahead transcript self-corrects). Keeps the
+ *  snapshot small enough for a 10-deep ring in localStorage. */
 export function snapshotFor(state: CampaignState): CampaignState {
   const clone = structuredClone(state) as Partial<CampaignState>;
   delete clone.history;
+  clone.transcript = [];
   return clone as CampaignState;
 }
 

@@ -223,7 +223,6 @@ export function MissionBoard({
       {header}
       <div className="board-canvas" key={board.blowUpAt}>
         <div className="board-grid" />
-        <div className="board-scan" />
         <LinkLayer board={board} onRemove={removeLink} onLabel={setLinkLabel} />
         {board.windows.map((w, i) => {
           const box = boxOf(w);
@@ -235,9 +234,13 @@ export function MissionBoard({
               onClick={linkMode ? () => onWindowPick(w.id) : undefined}
               className={`board-window ${w.pinned ? "pinned" : ""} ${dragging ? "" : "board-in"}`}
               style={{
-                left: box.x,
-                top: box.y,
+                // While dragging, keep the committed left/top and move via a
+                // compositor-only transform (left/top would trigger layout each frame).
+                left: dragging ? w.x : box.x,
+                top: dragging ? w.y : box.y,
                 width: box.w,
+                transform: dragging ? `translate(${box.x - w.x}px, ${box.y - w.y}px)` : undefined,
+                willChange: dragging ? "transform" : undefined,
                 zIndex: dragging ? 9999 : w.z,
                 animationDelay: `${Math.min(i * 60, 600)}ms`,
                 cursor: linkMode ? "crosshair" : undefined,

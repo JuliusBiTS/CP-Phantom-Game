@@ -7,10 +7,12 @@ function base(): CampaignState {
 }
 
 describe("history ring", () => {
-  it("snapshot strips its own history so snapshots don't nest", () => {
+  it("snapshot strips its own history + transcript so snapshots stay small", () => {
     const s = pushHistory(base(), "one");
+    s.transcript = [{ role: "user", content: "big" }];
     const snap = snapshotFor(s) as CampaignState & { history?: unknown };
     expect(snap.history).toBeUndefined();
+    expect(snap.transcript).toEqual([]);
     expect(snap.meta.id).toBe("c");
   });
 

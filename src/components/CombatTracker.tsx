@@ -17,6 +17,7 @@ const TYPE_COLOR: Record<CombatantView["type"], string> = {
   Companion: "var(--blue-bright)",
   Drone: "var(--red-bright)",
   Security: "var(--red-bright)",
+  Vehicle: "var(--gold-bright)",
 };
 
 const ROLE_COLOR: Record<string, string> = {

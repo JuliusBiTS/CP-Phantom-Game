@@ -491,7 +491,6 @@ code {
    carry their own inline width/height (the old `> *` rule bloated every window
    to 1400px, so they all overlapped). */
 .board-canvas > .board-grid,
-.board-canvas > .board-scan,
 .board-canvas > .board-links {
   min-width: 1600px;
   min-height: 1200px;
@@ -504,18 +503,6 @@ code {
     linear-gradient(90deg, rgba(34, 224, 255, 0.04) 1px, transparent 1px);
   background-size: 40px 40px;
   pointer-events: none;
-}
-.board-scan {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(180deg, transparent 0%, rgba(34, 224, 255, 0.035) 50%, transparent 100%);
-  background-size: 100% 220px;
-  animation: board-scan 6s linear infinite;
-}
-@keyframes board-scan {
-  from { background-position: 0 -220px; }
-  to { background-position: 0 100%; }
 }
 .board-stacked .board-canvas { overflow: auto; }
 .board-stacked .board-canvas > * { min-width: 0; min-height: 0; }
@@ -531,12 +518,7 @@ code {
   stroke: var(--red-bright);
   stroke-width: 1.4;
   stroke-dasharray: 4 4;
-  opacity: 0.55;
-  animation: board-flow 1s linear infinite;
-  filter: drop-shadow(0 0 3px var(--red-glow));
-}
-@keyframes board-flow {
-  to { stroke-dashoffset: -8; }
+  opacity: 0.6;
 }
 .board-link-label {
   fill: var(--red-bright);
@@ -557,8 +539,6 @@ code {
 }
 @media (prefers-reduced-motion: reduce) {
   .board-in { animation: none; }
-  .board-scan { animation: none; }
-  .board-link-line { animation: none; }
 }
 
 .board-frame {

@@ -20,7 +20,7 @@ export interface CombatantWeapon {
 
 export interface CombatantView {
   name: string;
-  type: "PC" | "NPC" | "Ally" | "Companion" | "Drone" | "Security";
+  type: "PC" | "NPC" | "Ally" | "Companion" | "Drone" | "Security" | "Vehicle";
   hp: number;
   hpMax: number;
   hpPct: number;
@@ -32,9 +32,10 @@ export interface CombatantView {
   generated?: { tier: string; archetype: string };
 }
 
-type Flagged = LiveChar & { isSecurityUnit?: boolean; isNPC?: boolean; isAlly?: boolean };
+type Flagged = LiveChar & { isSecurityUnit?: boolean; isNPC?: boolean; isAlly?: boolean; isVehicle?: boolean };
 
 function typeOf(c: Flagged): CombatantView["type"] {
+  if (c.isVehicle) return "Vehicle";
   if (c.isDrone) return "Drone";
   if (c.isSecurityUnit) return "Security";
   if (c.isCompanion) return "Companion";
