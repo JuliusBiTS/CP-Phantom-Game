@@ -224,7 +224,7 @@ export function CombatTracker({
               <div key={o.id}>
                 <Card
                   v={v}
-                  role={o.role}
+                  role={o.isPC ? "pc" : o.role}
                   intent={o.intent}
                   coverMaterial={o.coverMaterial}
                   coverHp={o.coverHp}
