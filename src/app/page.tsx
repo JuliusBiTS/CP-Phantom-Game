@@ -899,14 +899,24 @@ function NewCampaignForm({
       let bible: CampaignBible | undefined;
       let plan: CampaignState["campaignPlan"] | undefined;
       if (mode === "campaign") {
-        const endpoint = fullCampaign ? "/api/generate-campaign" : "/api/bible";
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ premise, character }),
-        });
-        const data = (await res.json()) as { bible?: CampaignBible; plan?: CampaignState["campaignPlan"]; error?: string };
-        if (!res.ok || data.error) throw new Error(data.error || "campaign generation failed");
+        const call = async (endpoint: string) => {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ premise, character }),
+          });
+          const data = (await res.json()) as { bible?: CampaignBible; plan?: CampaignState["campaignPlan"]; error?: string };
+          if (!res.ok || data.error) throw new Error(data.error || "campaign generation failed");
+          return data;
+        };
+        let data: { bible?: CampaignBible; plan?: CampaignState["campaignPlan"] };
+        try {
+          data = await call(fullCampaign ? "/api/generate-campaign" : "/api/bible");
+        } catch (e) {
+          if (!fullCampaign) throw e;
+          // Full-campaign failed — fall back to just the bible so creation isn't blocked.
+          data = await call("/api/bible");
+        }
         bible = data.bible;
         plan = data.plan;
       }
