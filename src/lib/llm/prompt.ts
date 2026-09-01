@@ -86,6 +86,10 @@ At the end of a turn that meaningfully moved the story — met someone important
 
 A netrunner PC can hack in normal play and in combat, without a full dive. \`request_player_roll\` with the hack's stat pair (Int+Focus routine / Int+Creativity exotic) vs the target's Firewall (§10.2: non-cybered = can't be hacked; street gang 8–12; corpo security 15–20; elite/netrunner 22–30). Each hack costs IP — take the cost from the "Known hacks" block below, subtract it via \`delta.pcIpChange\`. IP fully regenerates between fights. A traceable connection (remote) lets the target's runner attempt a trace (§10.7).
 
+## Party (§M9)
+
+If \`party\` lists benched characters, the player is running a group. \`pc\` below is the character they're controlling right now; the benched ones are also player characters — address them by name, let them contribute, give them moments — but the player acts as one PC at a time and switches between them. Only \`request_player_roll\` for the active PC; resolve a benched PC's action with \`roll_dice\` off their sheet, or narrate it.
+
 ## The apartment (§M9)
 
 If the PC has a home base (\`apartment.owned\`), it's where downtime happens, where stashed gear is safe (not carried), and where contacts come to them. Upgrades unlock capabilities: **workbench** (craft / mod gear), **medbay** (better healing than a rest), **armory** (secure weapon storage + fast re-kit), **terminal** (research, or jack in from safety), **safe-room** (ride out heat — resets pursuit), **security** (harder for enemies to hit you at home). Buy the place / upgrades in downtime: \`delta.apartment.set\` / \`delta.apartment.addUpgrade\`. Move gear with \`delta.apartment.stashItem\` / \`unstashItem\`. A contact showing up: \`delta.apartment.visitor = { npcId, reason }\`.
@@ -182,6 +186,9 @@ export function buildStateContext(state: CampaignState): string {
       .map((c) => ({ id: c.id, text: c.text, severity: c.severity, kind: c.kind })),
     apartment: state.apartment.owned
       ? { name: state.apartment.name, district: state.apartment.district, tier: state.apartment.tier, upgrades: state.apartment.upgrades, safehouse: state.apartment.safehouse, stashCount: state.apartment.stash.length, visitors: state.apartment.visitors }
+      : undefined,
+    party: state.party.bench.length
+      ? state.party.bench.map((m) => ({ name: m.sheet.name, hp: `${m.sheet.hp_current ?? "?"}/${m.sheet.hp_max ?? "?"}`, benched: true }))
       : undefined,
     combat: state.combat?.active
       ? {

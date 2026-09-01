@@ -354,6 +354,13 @@ export const Downtime = z.object({
 });
 export type Downtime = z.infer<typeof Downtime>;
 
+/** Party mode — FEATURE_PLAN.md §M9. `state.character` is ALWAYS the active PC
+ *  (so nothing else changes); `bench` holds the other player characters. */
+export const Party = z.object({
+  bench: z.array(z.object({ id: z.string(), sheet: CharacterSheet })).default([]),
+});
+export type Party = z.infer<typeof Party>;
+
 /** The apartment — a persistent home base. FEATURE_PLAN.md §M9. */
 export const Apartment = z.object({
   owned: z.boolean().default(false),
@@ -463,6 +470,7 @@ export const CampaignState = z.object({
   netrun: Netrun.default({ active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] }),
   chase: Chase.default({ active: false, spur: 2, round: 1, terrain: "backstreets", pcRole: "runner", pursuerTier: "standard", vehicles: [] }),
   apartment: Apartment.default({ owned: false, name: "", district: "", tier: "cheap", upgrades: [], stash: [], safehouse: false, visitors: [] }),
+  party: Party.default({ bench: [] }),
   consequences: z.array(Consequence).default([]),
   timeline: z.array(TimelineBeat).default([]),
   sessionLog: z.array(SessionLogEntry).default([]),
@@ -532,6 +540,7 @@ export function newCampaignState(args: {
     netrun: { active: false, target: "", deck: "Standard", connection: "local", trace: 0, alarm: 0, architecture: [], position: 0, daemons: [] },
     chase: { active: false, spur: 2, round: 1, terrain: "backstreets", pcRole: "runner", pursuerTier: "standard", vehicles: [] },
     apartment: { owned: false, name: "", district: "", tier: "cheap", upgrades: [], stash: [], safehouse: false, visitors: [] },
+    party: { bench: [] },
     consequences: [],
     timeline: [],
     sessionLog: [],

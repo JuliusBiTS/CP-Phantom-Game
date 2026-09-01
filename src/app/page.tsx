@@ -30,6 +30,7 @@ import { NetrunView } from "@/components/NetrunView";
 import { ChaseView } from "@/components/ChaseView";
 import { ApartmentView } from "@/components/ApartmentView";
 import { ConversationHud } from "@/components/ConversationHud";
+import { PartyRail } from "@/components/PartyRail";
 import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
@@ -501,6 +502,8 @@ export default function Home() {
               onExit={() => setConvo(false)}
             />
           )}
+
+          <PartyRail state={state} onPatchState={patchState} />
 
           <div style={{ display: "flex", gap: 8, margin: "0 0 4px" }}>
             <button onClick={() => setShowBoard(true)} style={{ padding: "3px 10px", fontSize: 10 }}>
