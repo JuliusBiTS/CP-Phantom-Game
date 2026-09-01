@@ -29,6 +29,7 @@ import { DowntimePanel } from "@/components/DowntimePanel";
 import { NetrunView } from "@/components/NetrunView";
 import { ChaseView } from "@/components/ChaseView";
 import { ApartmentView } from "@/components/ApartmentView";
+import { ConversationHud } from "@/components/ConversationHud";
 import { DEFAULT_TONE } from "@/lib/llm/tone";
 
 type CharacterSheetType = CharacterSheet;
@@ -81,6 +82,7 @@ export default function Home() {
   const [showTone, setShowTone] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
   const [showApartment, setShowApartment] = useState(false);
+  const [convo, setConvo] = useState(false);
 
   useEffect(() => {
     store.list().then(setCampaigns).catch(() => {});
@@ -366,8 +368,8 @@ export default function Home() {
     }
   }
 
-  function submitAction() {
-    const text = (action + " " + interim).trim();
+  function submitAction(override?: string) {
+    const text = (override ?? action + " " + interim).trim();
     if (!text) return;
     setAction("");
     setInterim("");
@@ -439,6 +441,13 @@ export default function Home() {
             <button onClick={() => setShowTranscript(true)} style={{ padding: "3px 9px", fontSize: 10 }}>
               Transcript (T)
             </button>
+            <button
+              onClick={() => setConvo((v) => !v)}
+              style={{ padding: "3px 9px", fontSize: 10, borderColor: convo ? "var(--cyan)" : undefined, color: convo ? "var(--cyan)" : undefined }}
+              title="Hands-free: GM reads aloud, you talk back"
+            >
+              🎙 Hands-free
+            </button>
             <span style={{ position: "relative" }}>
               <button onClick={() => setShowTone((v) => !v)} style={{ padding: "3px 9px", fontSize: 10 }}>
                 Tone
@@ -480,6 +489,18 @@ export default function Home() {
       {!showNew && state && c && (
         <>
           <VitalsHud state={state} onPatch={patchCharacter} onOpenSheet={() => setShowSheet(true)} />
+
+          {convo && (
+            <ConversationHud
+              busy={busy}
+              pending={pending}
+              streamText={streamText}
+              liveNarration={[...state.sessionLog].reverse().find((l) => l.type === "narration")?.text ?? ""}
+              onAction={(text) => submitAction(text)}
+              onRoll={(total, dice) => submitRoll(total, dice)}
+              onExit={() => setConvo(false)}
+            />
+          )}
 
           <div style={{ display: "flex", gap: 8, margin: "0 0 4px" }}>
             <button onClick={() => setShowBoard(true)} style={{ padding: "3px 10px", fontSize: 10 }}>
@@ -743,7 +764,7 @@ export default function Home() {
                 placeholder="Describe your action…  (Enter to send · Shift+Enter for a new line)"
               />
               <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                <button onClick={submitAction} disabled={busy}>
+                <button onClick={() => submitAction()} disabled={busy}>
                   {busy ? "GM is thinking…" : "Act ⏎"}
                 </button>
                 <DictationButton
