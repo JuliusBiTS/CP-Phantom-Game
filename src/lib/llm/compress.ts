@@ -16,6 +16,7 @@ import { z } from "zod";
 import type { CampaignState } from "../state/campaignState";
 import { applyDelta } from "../state/delta";
 import { toInputSchema } from "./tools";
+import { addUsage } from "./cost";
 
 const CompressionResult = z.object({
   npcFacts: z.array(z.object({ id: z.string(), name: z.string().optional(), addFacts: z.array(z.string()) })).default([]),
@@ -104,6 +105,9 @@ export async function maybeCompress(state: CampaignState, opts: CompressOpts): P
       ],
       tool_choice: { type: "tool", name: "record_facts" },
     });
+
+    // Billed regardless of what happens below — record it before anything else can throw.
+    s.meta.usage = addUsage(s.meta.usage, response.usage, opts.model);
 
     const call = response.content.find(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_facts",

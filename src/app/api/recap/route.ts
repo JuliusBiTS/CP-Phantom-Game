@@ -10,6 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { CampaignState } from "@/lib/state/campaignState";
+import { usageDelta } from "@/lib/llm/cost";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
       .map((b) => b.text)
       .join("\n")
       .trim();
-    return NextResponse.json({ recap });
+    return NextResponse.json({ recap, usage: usageDelta(res.usage, MODEL) });
   } catch (err) {
     console.error("[/api/recap] error", err);
     return NextResponse.json({ error: (err as Error).message || "recap failed" }, { status: 500 });

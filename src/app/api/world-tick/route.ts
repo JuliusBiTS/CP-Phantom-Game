@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { CampaignState } from "@/lib/state/campaignState";
 import { TurnDelta } from "@/lib/state/delta";
 import { toInputSchema } from "@/lib/llm/tools";
+import { usageDelta } from "@/lib/llm/cost";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -63,10 +64,11 @@ export async function POST(req: NextRequest) {
       tools: [{ name: "record_world_tick", description: "Record how the world moved.", input_schema: toInputSchema(WorldTick) }],
       tool_choice: { type: "tool", name: "record_world_tick" },
     });
+    const usage = usageDelta(res.usage, MODEL);
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_world_tick");
-    if (!call) return NextResponse.json({ delta: {}, narration: "" });
+    if (!call) return NextResponse.json({ delta: {}, narration: "", usage });
     const out = WorldTick.parse(call.input);
-    return NextResponse.json({ delta: out.delta, narration: out.narration });
+    return NextResponse.json({ delta: out.delta, narration: out.narration, usage });
   } catch (err) {
     console.error("[/api/world-tick]", err);
     return NextResponse.json({ error: (err as Error).message || "world tick failed" }, { status: 500 });

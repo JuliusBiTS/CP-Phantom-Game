@@ -22,7 +22,7 @@ import { QuickActions } from "@/components/QuickActions";
 import { MissionBoard } from "@/components/MissionBoard";
 import { TranscriptView } from "@/components/TranscriptView";
 import { popHistory } from "@/lib/state/history";
-import { estimateCostUsd, formatCostUsd } from "@/lib/llm/cost";
+import { estimateCostUsd, formatCostUsd, mergeUsage } from "@/lib/llm/cost";
 import { runTurnStream, StreamUnavailable } from "@/lib/llm/streamClient";
 import { ToneEditor } from "@/components/ToneEditor";
 import { DowntimePanel } from "@/components/DowntimePanel";
@@ -202,13 +202,14 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ state: s }),
       });
-      const data = (await res.json()) as { recap?: string; error?: string };
+      const data = (await res.json()) as { recap?: string; usage?: CampaignState["meta"]["usage"]; error?: string };
       if (data.recap) {
         setState((prev) => {
           const target = prev && prev.meta.id === s.meta.id ? prev : s;
           const next: CampaignState = structuredClone(target);
           next.meta.recap = data.recap!;
           next.meta.recapForTs = lastNarr.ts;
+          if (data.usage) next.meta.usage = mergeUsage(next.meta.usage, data.usage);
           void store.save(next);
           return next;
         });
@@ -229,7 +230,7 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ state }),
       });
-      const data = (await res.json()) as { delta?: TurnDelta; narration?: string; error?: string };
+      const data = (await res.json()) as { delta?: TurnDelta; narration?: string; usage?: CampaignState["meta"]["usage"]; error?: string };
       if (!res.ok || data.error) {
         setError(data.error || "world tick failed");
         return;
@@ -241,6 +242,7 @@ export default function Home() {
         next.meta.recap = `While you were dark: ${data.narration}`;
         next.meta.recapForTs = Date.now();
       }
+      if (data.usage) next.meta.usage = mergeUsage(next.meta.usage, data.usage);
       await persist(next);
       setShowRecap(Boolean(data.narration));
     } catch (e) {
@@ -799,7 +801,11 @@ export default function Home() {
 function CostMeter({ state }: { state: CampaignState }) {
   const [open, setOpen] = useState(false);
   const u = state.meta.usage;
-  const usd = estimateCostUsd(u, state.meta.model);
+  // costUsd is costed per-call at each call's own model — accurate across the
+  // Sonnet narrator + Haiku background jobs this campaign actually ran on.
+  // Saves from before it existed (costUsd === 0 but tokens > 0) fall back to
+  // a single-model estimate.
+  const usd = u.costUsd || estimateCostUsd(u, state.meta.model);
   return (
     <span style={{ position: "relative" }}>
       <button
@@ -898,6 +904,7 @@ function NewCampaignForm({
       const character = await resolveCharacter();
       let bible: CampaignBible | undefined;
       let plan: CampaignState["campaignPlan"] | undefined;
+      let usage: CampaignState["meta"]["usage"] | undefined;
       if (mode === "campaign") {
         const call = async (endpoint: string) => {
           const res = await fetch(endpoint, {
@@ -905,11 +912,16 @@ function NewCampaignForm({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ premise, character }),
           });
-          const data = (await res.json()) as { bible?: CampaignBible; plan?: CampaignState["campaignPlan"]; error?: string };
+          const data = (await res.json()) as {
+            bible?: CampaignBible;
+            plan?: CampaignState["campaignPlan"];
+            usage?: CampaignState["meta"]["usage"];
+            error?: string;
+          };
           if (!res.ok || data.error) throw new Error(data.error || "campaign generation failed");
           return data;
         };
-        let data: { bible?: CampaignBible; plan?: CampaignState["campaignPlan"] };
+        let data: { bible?: CampaignBible; plan?: CampaignState["campaignPlan"]; usage?: CampaignState["meta"]["usage"] };
         try {
           data = await call(fullCampaign ? "/api/generate-campaign" : "/api/bible");
         } catch (e) {
@@ -919,6 +931,7 @@ function NewCampaignForm({
         }
         bible = data.bible;
         plan = data.plan;
+        usage = data.usage;
       }
       const id = "c_" + Date.now().toString(36);
       const s = newCampaignState({
@@ -930,6 +943,7 @@ function NewCampaignForm({
       });
       if (bible) s.campaignBible = bible;
       if (plan) s.campaignPlan = plan;
+      if (usage) s.meta.usage = mergeUsage(s.meta.usage, usage);
       s.meta.tone = tone;
       await onCreated(s);
     } catch (e) {

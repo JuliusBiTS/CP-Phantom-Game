@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
   const character = CharacterSheet.safeParse(body.character);
   if (!character.success) return NextResponse.json({ error: "invalid character" }, { status: 400 });
   try {
-    const { bible, plan } = await generateCampaignPlan(String(body.premise ?? ""), character.data);
-    return NextResponse.json({ bible, plan });
+    const { bible, plan, usage } = await generateCampaignPlan(String(body.premise ?? ""), character.data);
+    return NextResponse.json({ bible, plan, usage });
   } catch (err) {
     console.error("[/api/generate-campaign]", err);
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

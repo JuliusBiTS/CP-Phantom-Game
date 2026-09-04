@@ -10,8 +10,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { CampaignBible, CampaignPlan } from "../state/campaignState";
+import { CampaignBible, CampaignPlan, Usage } from "../state/campaignState";
 import { toInputSchema } from "./tools";
+import { usageDelta, mergeUsage } from "./cost";
 import type { CharacterSheet } from "../state/campaignState";
 
 const MODEL = process.env.SOLO_MODEL || "claude-sonnet-5";
@@ -40,7 +41,7 @@ const SYSTEM = `You are designing the private campaign bible for a solo Cyberpun
 export async function generateCampaignBible(
   premise: string,
   character: CharacterSheet,
-): Promise<z.infer<typeof CampaignBible>> {
+): Promise<{ bible: z.infer<typeof CampaignBible>; usage: Usage }> {
   const anthropic = new Anthropic();
   const response = await anthropic.messages.create({
     model: MODEL,
@@ -69,7 +70,7 @@ export async function generateCampaignBible(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_bible",
   );
   if (!call) throw new Error("bible generation produced no result");
-  return CampaignBible.parse(BibleShape.parse(call.input));
+  return { bible: CampaignBible.parse(BibleShape.parse(call.input)), usage: usageDelta(response.usage, MODEL) };
 }
 
 // ── Full campaign generator — FEATURE_PLAN §M9 ──────────────────────────────
@@ -120,8 +121,8 @@ function coerceJson(v: unknown): unknown {
 export async function generateCampaignPlan(
   premise: string,
   character: CharacterSheet,
-): Promise<{ bible: z.infer<typeof CampaignBible>; plan: z.infer<typeof CampaignPlan> }> {
-  const bible = await generateCampaignBible(premise, character);
+): Promise<{ bible: z.infer<typeof CampaignBible>; plan: z.infer<typeof CampaignPlan>; usage: Usage }> {
+  const { bible, usage: bibleUsage } = await generateCampaignBible(premise, character);
   const emptyPlan = CampaignPlan.parse({ generated: false, currentAct: 1, acts: [] });
 
   try {
@@ -142,14 +143,15 @@ export async function generateCampaignPlan(
       tool_choice: { type: "tool", name: "record_gigs" },
     });
 
+    const usage = mergeUsage(bibleUsage, usageDelta(res.usage, MODEL));
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_gigs");
-    if (!call) return { bible, plan: emptyPlan };
+    if (!call) return { bible, plan: emptyPlan, usage };
 
     const raw = coerceJson(call.input) as { acts?: unknown };
     const parsed = GigsShape.safeParse({ acts: coerceJson(raw?.acts) });
     if (!parsed.success) {
       console.warn("[campaign] gigs parse failed, shipping bible only:", parsed.error.issues.slice(0, 3));
-      return { bible, plan: emptyPlan };
+      return { bible, plan: emptyPlan, usage };
     }
 
     const plan = CampaignPlan.parse({
@@ -172,9 +174,9 @@ export async function generateCampaignPlan(
         })),
       })),
     });
-    return { bible, plan };
+    return { bible, plan, usage };
   } catch (err) {
     console.warn("[campaign] gigs call failed, shipping bible only:", (err as Error).message);
-    return { bible, plan: emptyPlan };
+    return { bible, plan: emptyPlan, usage: bibleUsage };
   }
 }

@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid character" }, { status: 400 });
   }
   try {
-    const bible = await generateCampaignBible(String(body.premise ?? ""), character.data);
-    return NextResponse.json({ bible });
+    const { bible, usage } = await generateCampaignBible(String(body.premise ?? ""), character.data);
+    return NextResponse.json({ bible, usage });
   } catch (err) {
     console.error("[/api/bible]", err);
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

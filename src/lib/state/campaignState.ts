@@ -321,10 +321,15 @@ export const Usage = z.object({
   cacheWriteTokens: z.number().default(0),
   /** Player turns taken (one per action, not per model round-trip). */
   turns: z.number().default(0),
+  /** Running dollar total, costed per-call at that call's own model rate —
+   *  unlike the raw token fields above, safe to accumulate across models
+   *  (Sonnet narrator + Haiku background jobs). 0 on saves from before this
+   *  existed; the UI falls back to a single-model estimate for those. */
+  costUsd: z.number().default(0),
 });
 export type Usage = z.infer<typeof Usage>;
 
-const USAGE_ZERO = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0 };
+const USAGE_ZERO = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0, costUsd: 0 };
 
 /** Tone dials — FEATURE_PLAN.md §M2. Each 0–3; see lib/llm/tone.ts. */
 export const Tone = z.object({

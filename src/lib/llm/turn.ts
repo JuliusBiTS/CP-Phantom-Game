@@ -556,7 +556,7 @@ async function drive(
     if (onEvent) stream.on("text", (delta) => onEvent({ type: "text", delta }));
     const response = await stream.finalMessage();
 
-    state.meta.usage = addUsage(state.meta.usage, response.usage);
+    state.meta.usage = addUsage(state.meta.usage, response.usage, MODEL);
     narration = [narration, textOf(response.content)].filter(Boolean).join("\n\n");
     messages.push({ role: "assistant", content: response.content });
 
