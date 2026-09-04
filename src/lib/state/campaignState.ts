@@ -167,6 +167,11 @@ export const CombatZone = z.object({
   name: z.string(),
   note: z.string().optional(),
   coverMaterial: z.string().optional(),
+  /** Rough relative layout for the battle map — FEATURE_PLAN battle-map feature.
+   *  Optional: absent on older saves / when the GM omits it, in which case the
+   *  map falls back to a deterministic auto-layout. Not used by any rules math. */
+  gx: z.number().optional(),
+  gy: z.number().optional(),
 });
 
 /** An armed overwatch / Feuerbereitschaft (§4 / §7.5). */

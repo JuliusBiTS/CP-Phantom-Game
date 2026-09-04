@@ -704,7 +704,7 @@ export async function runTurn(
     const stash = working.pendingInitiative as {
       npcRolls: InitiativeEntry[];
       combatants: Array<{ id: string; name: string; role?: "enemy" | "ally" | "neutral"; zoneId?: string; coverMaterial?: string }>;
-      zones?: Array<{ id: string; name: string; note?: string; coverMaterial?: string }>;
+      zones?: Array<{ id: string; name: string; note?: string; coverMaterial?: string; gx?: number; gy?: number }>;
       pcZoneId?: string | null;
     };
     const pcEntry = rollInitiativeForFromTyped(working, pending.pw, input.dice, input.total);
@@ -732,7 +732,7 @@ export async function runTurn(
       }),
       pcTargetId: stash.combatants.find((c) => (c.role ?? "enemy") === "enemy")?.id ?? stash.combatants[0]?.id ?? null,
       lastPcAction: null,
-      zones: (stash.zones ?? []).map((z) => ({ id: z.id, name: z.name, note: z.note, coverMaterial: z.coverMaterial })),
+      zones: (stash.zones ?? []).map((z) => ({ id: z.id, name: z.name, note: z.note, coverMaterial: z.coverMaterial, gx: z.gx, gy: z.gy })),
       overwatch: [],
       flinkUsed: false,
     };

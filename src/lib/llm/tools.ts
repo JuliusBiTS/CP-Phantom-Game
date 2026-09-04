@@ -100,9 +100,20 @@ export const StartCombatInput = z.object({
     )
     .describe("Every NON-PC entity entering the fight (must already be generated via generate_npc). The PC is added automatically."),
   zones: z
-    .array(z.object({ id: z.string(), name: z.string(), note: z.string().optional(), coverMaterial: z.string().optional() }))
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        note: z.string().optional(),
+        coverMaterial: z.string().optional(),
+        gx: z.number().int().min(0).max(4).optional().describe("Rough column (0-4, left→right) reflecting this zone's layout relative to the others."),
+        gy: z.number().int().min(0).max(4).optional().describe("Rough row (0-4, top→bottom) reflecting this zone's layout relative to the others."),
+      }),
+    )
     .optional()
-    .describe("2–5 named areas for theater-of-mind positioning, e.g. [{id:'bar',name:'The bar'},{id:'door',name:'Front door'}]. Optional but recommended for any fight with movement."),
+    .describe(
+      "2–5 named areas for theater-of-mind positioning, e.g. [{id:'bar',name:'The bar',gx:1,gy:1},{id:'door',name:'Front door',gx:0,gy:0}]. Optional but recommended for any fight with movement — set gx/gy so the battle map layout matches how you're narrating the space.",
+    ),
   pcZoneId: z.string().optional().describe("Which zone the PC starts in."),
 });
 

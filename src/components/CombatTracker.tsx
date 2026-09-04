@@ -9,23 +9,8 @@
 
 import type { CampaignState } from "@/lib/state/campaignState";
 import { combatantView, type CombatantView } from "@/lib/rules/combatant";
-
-const TYPE_COLOR: Record<CombatantView["type"], string> = {
-  PC: "var(--cyan)",
-  NPC: "var(--red-bright)",
-  Ally: "var(--green-bright)",
-  Companion: "var(--blue-bright)",
-  Drone: "var(--red-bright)",
-  Security: "var(--red-bright)",
-  Vehicle: "var(--gold-bright)",
-};
-
-const ROLE_COLOR: Record<string, string> = {
-  pc: "var(--cyan)",
-  enemy: "var(--red-bright)",
-  ally: "var(--green-bright)",
-  neutral: "var(--text2)",
-};
+import { TYPE_COLOR, ROLE_COLOR } from "./combatColors";
+import { BattleMap } from "./BattleMap";
 
 function Card({
   v,
@@ -183,24 +168,7 @@ export function CombatTracker({
           ))}
         </div>
 
-        {combat.zones.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-            {combat.zones.map((z) => {
-              const here = combat.order.filter((o) => o.zoneId === z.id);
-              return (
-                <div key={z.id} style={{ border: "1px solid var(--border2)", padding: "4px 8px", fontSize: 10, minWidth: 90 }}>
-                  <div style={{ letterSpacing: "0.08em", color: "var(--text2)" }}>{z.name.toUpperCase()}</div>
-                  {z.coverMaterial && <div className="muted" style={{ fontSize: 9 }}>▚ {z.coverMaterial}</div>}
-                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
-                    {here.map((o) => (
-                      <span key={o.id} title={o.name} style={{ width: 8, height: 8, borderRadius: "50%", background: ROLE_COLOR[o.role] ?? "var(--text3)" }} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <BattleMap combat={combat} viewFor={viewFor} onPatchCombat={onPatchCombat} />
 
         {(combat.overwatch.length > 0 || combat.flinkUsed) && (
           <div style={{ fontSize: 10, color: "var(--text2)", marginBottom: 6 }}>
